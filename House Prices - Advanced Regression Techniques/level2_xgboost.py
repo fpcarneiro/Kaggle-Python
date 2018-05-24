@@ -60,58 +60,30 @@ def log_transform(dataset, feature):
 def quadratic(dataset, feature):
     dataset[feature+'2'] = dataset[feature]**2
 
-def init_missing():
-    missing_dict = {}
-    missing_dict["Alley"] = "None"
-    missing_dict["BedroomAbvGr"] = 0
-    missing_dict["BsmtQual"] = "No"
-    missing_dict["BsmtCond"] = "No"
-    missing_dict["BsmtExposure"] = "No"
-    missing_dict["BsmtFinType1"] = "No"
-    missing_dict["BsmtFinType2"] = "No"
-    missing_dict["BsmtFullBath"] = 0
-    missing_dict["BsmtHalfBath"] = 0
-    missing_dict["BsmtUnfSF"] = 0
-    missing_dict["CentralAir"] = "N"
-    missing_dict["Condition1"] = "Norm"
-    missing_dict["Condition2"] = "Norm"
-    missing_dict["EnclosedPorch"] = 0
-    missing_dict["ExterCond"] = "TA"
-    missing_dict["ExterQual"] = "TA"
-    missing_dict["Fence"] = "No"
-    missing_dict["FireplaceQu"] = "No"
-    missing_dict["Fireplaces"] = 0
+def check_missing(dataset):
+    all_data_na = (dataset.isnull().sum() / len(dataset)) * 100
+    all_data_na = all_data_na.drop(all_data_na[all_data_na == 0].index).sort_values(ascending=False)
+    missing_data = pd.DataFrame({'Missing Ratio' :all_data_na})
+    return(missing_data)
+
+def handle_missing(dataset):
+    cols_mode = ['MSZoning', 'SaleType', 'Electrical', 'Exterior1st', 'Exterior2nd']
+    no_cols = ["PoolQC", "MiscFeature", "Alley", "Fence", "FireplaceQu", "GarageType", "GarageFinish", "GarageQual", "GarageCond", "BsmtQual",
+               "BsmtCond", "BsmtExposure", "BsmtFinType1", "BsmtFinType2", "MasVnrType"]
+    zero_cols = ["GarageYrBlt", "LotFrontage", "GarageArea", "GarageCars", "BsmtFinSF1", "BsmtFinSF2", "BsmtUnfSF", "TotalBsmtSF", "BsmtFullBath",
+                 "BsmtHalfBath", "MasVnrArea"]
+    
+    missing_dict = dict(zip(zero_cols,[0] * len(zero_cols)))
+    missing_dict.update(dict(zip(no_cols,["No"] * len(no_cols))))
     missing_dict["Functional"] = "Typ"
-    missing_dict["GarageType"] = "No"
-    missing_dict["GarageFinish"] = "No"
-    missing_dict["GarageQual"] = "No"
-    missing_dict["GarageCond"] = "No"
-    missing_dict["GarageArea"] = 0
-    missing_dict["GarageCars"] = 0
-    missing_dict["HalfBath"] = 0
-    missing_dict["HeatingQC"] = "TA"
-    missing_dict["KitchenAbvGr"] = 0
-    missing_dict["KitchenQual"] = "TA"
-    missing_dict["LotFrontage"] = 0
-    missing_dict["LotShape"] = "Reg"
-    missing_dict["MasVnrType"] = "None"
-    missing_dict["MasVnrArea"] = 0
-    missing_dict["MiscFeature"] = "No"
-    missing_dict["MiscVal"] = 0
-    missing_dict["OpenPorchSF"] = 0
-    missing_dict["PavedDrive"] = "N"
-    missing_dict["PoolQC"] = "No"
-    missing_dict["PoolArea"] = 0
-    missing_dict["SaleCondition"] = "Normal"
-    missing_dict["ScreenPorch"] = 0
-    missing_dict["TotRmsAbvGrd"] = 0
     missing_dict["Utilities"] = "AllPub"
-    missing_dict["WoodDeckSF"] = 0
-    return missing_dict
-           
-def handle_missing(dataset, md):       
-    for (k, v) in md.items():
+    missing_dict["KitchenQual"] = "TA"
+    
+    for (k, v) in missing_dict.items():
         dataset.loc[:, k] = dataset.loc[:, k].fillna(v)
+
+    for col in cols_mode:
+        dataset[col] = dataset[col].fillna(dataset[col].mode()[0])
 
 def encode(dataset):
     quality_scale = {"No" : 0, "Po" : 1, "Fa" : 2, "TA" : 3, "Gd" : 4, "Ex" : 5}
@@ -222,15 +194,21 @@ def simplify_features2(dataset):
 #    # House completed before sale or not
     dataset["BoughtOffPlan"] = dataset.SaleCondition.replace({"Abnorml" : 0, "Alloca" : 0, "AdjLand" : 0, 
                                                       "Family" : 0, "Normal" : 0, "Partial" : 1})
+    #dataset['TotalSF'] = dataset['TotalBsmtSF'] + dataset['1stFlrSF'] + dataset['2ndFlrSF']
     
 #obj_df["num_cylinders"].value_counts()
 
 train, test = read_train_test()
 
+train = train.drop(train[(train['GrLivArea']>4000) & (train['SalePrice']<300000)].index)
+#train = train.drop(['Utilities'], axis=1)
+
 ds = concat_train_test(train.drop(['SalePrice'], axis=1), test)
+
 #ds = ds.drop(high_occurance_missing(ds, 0.8), axis=1)
 ds = convert_numeric2category(ds)
-handle_missing(ds, init_missing())
+handle_missing(ds)
+
 ds = encode(ds)
 simplify_features1(ds)
 simplify_features2(ds)
