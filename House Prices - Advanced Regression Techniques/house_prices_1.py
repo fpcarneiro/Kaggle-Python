@@ -377,7 +377,7 @@ print(predicted_prices_xgboost)
 predicted_prices_lgb = np.expm1(model_lgb.predict(test_X))
 print(predicted_prices_lgb)
 
-predicted_prices = predicted_prices_stacked_averaged*0.4 + predicted_prices_xgboost*0.3 + predicted_prices_lgb*0.3
+predicted_prices = predicted_prices_stacked_averaged*0.6 + predicted_prices_xgboost*0.2 + predicted_prices_lgb*0.2
 
 my_submission = pd.DataFrame({'Id': test.Id, 'SalePrice': predicted_prices})
 my_submission.to_csv('submission_ensemble.csv', index=False)
