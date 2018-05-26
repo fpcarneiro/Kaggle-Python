@@ -1,16 +1,77 @@
 import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor,  GradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error
-from sklearn.preprocessing import Imputer, RobustScaler
+from sklearn.preprocessing import RobustScaler
 from xgboost import XGBRegressor
 from sklearn.pipeline import Pipeline, make_pipeline
 from sklearn.model_selection import KFold, cross_val_score
 from sklearn.linear_model import ElasticNet, Lasso,  BayesianRidge, LassoLarsIC
+from sklearn.kernel_ridge import KernelRidge
 import numpy as np
 from scipy.stats import skew
-#from scipy.special import boxcox1p
+import lightgbm as lgb
+from sklearn.base import BaseEstimator, TransformerMixin, RegressorMixin, clone
+
+class AveragingModels(BaseEstimator, RegressorMixin, TransformerMixin):
+    def __init__(self, models):
+        self.models = models
+        
+    # we define clones of the original models to fit the data in
+    def fit(self, X, y):
+        self.models_ = [clone(x) for x in self.models]
+        
+        # Train cloned base models
+        for model in self.models_:
+            model.fit(X, y)
+
+        return self
+    
+    #Now we do the predictions for cloned models and average them
+    def predict(self, X):
+        predictions = np.column_stack([
+            model.predict(X) for model in self.models_
+        ])
+        return np.mean(predictions, axis=1)
+
+class StackingAveragedModels(BaseEstimator, RegressorMixin, TransformerMixin):
+    def __init__(self, base_models, meta_model, n_folds=3):
+        self.base_models = base_models
+        self.meta_model = meta_model
+        self.n_folds = n_folds
+   
+    # We again fit the data on clones of the original models
+    def fit(self, X, y):
+        self.base_models_ = [list() for x in self.base_models]
+        self.meta_model_ = clone(self.meta_model)
+        kfold = KFold(n_splits=self.n_folds, shuffle=True, random_state=156)
+        # Train cloned base models then create out-of-fold predictions
+        # that are needed to train the cloned meta-model
+        out_of_fold_predictions = np.zeros((X.shape[0], len(self.base_models)))
+        for i, model in enumerate(self.base_models):
+            for train_index, holdout_index in kfold.split(X, y):
+                instance = clone(model)
+                self.base_models_[i].append(instance)
+                instance.fit(X.iloc[train_index], y.iloc[train_index])
+                y_pred = instance.predict(X.iloc[holdout_index])
+                out_of_fold_predictions[holdout_index, i] = y_pred        
+        # Now train the cloned  meta-model using the out-of-fold predictions as new feature
+        self.meta_model_.fit(out_of_fold_predictions, y)
+        return self
+   
+    #Do the predictions of all base models on the test data and use the averaged predictions as 
+    #meta-features for the final prediction which is done by the meta-model
+    def predict(self, X):
+        meta_features = np.column_stack([
+            np.column_stack([model.predict(X) for model in base_models]).mean(axis=1)
+            for base_models in self.base_models_ ])
+        return self.meta_model_.predict(meta_features)
 
 DATADIR = "input/"
+
+import warnings
+def ignore_warn(*args, **kwargs):
+    pass
+warnings.warn = ignore_warn #ignore annoying warning (from sklearn and seaborn)
 
 def score_dataset(train_X, test_X, train_y, test_y):
     forest_model = RandomForestRegressor()
@@ -23,8 +84,8 @@ def read_train_test(train_file = 'train.csv', test_file = 'test.csv'):
     test = pd.read_csv(DATADIR + test_file)
     return train, test
 
-def concat_train_test(train, test):
-    dataset = train.append(test, ignore_index=True)
+def concat_train_test(train, test, ignore_index=False):
+    dataset = train.append(test, ignore_index=ignore_index)
     dataset["dataset"] = "train"
     dataset.loc[dataset.Id.isin(test.Id), "dataset"] = "test"
     return dataset
@@ -49,9 +110,10 @@ def get_predictors(dataset, drop_list = ['dataset', 'Id']):
     cat_columns = list(mydata.select_dtypes(include=['object']).columns)
     return (num_columns, cat_columns)
 
-def hot_encode(dataset, drop_list = ['dataset']):
+def hot_encode(dataset, drop_list = ['dataset', 'Id']):
     encoded = pd.get_dummies(dataset.drop(drop_list, axis=1))
-    return (pd.merge(encoded, dataset[['Id'] + drop_list], how='inner', on=['Id']))
+    #return (pd.merge(encoded, dataset[['Id'] + drop_list], how='inner', on=['Id']))
+    return (pd.concat([ dataset[drop_list] , encoded], axis=1))
 
 def log_transform(dataset, feature):
     dataset[feature] = np.log1p(dataset[feature].values)
@@ -197,9 +259,9 @@ def simplify_features2(dataset):
     
 #obj_df["num_cylinders"].value_counts()
     
-def score_model(estimator, data, n_folds = 3, scoring_func="neg_mean_absolute_error"):
-    kf = KFold(n_folds, shuffle=True, random_state=42).get_n_splits(data)
-    score = -cross_val_score(estimator, train_X, train_y, scoring=scoring_func, cv = kf)
+def score_model(estimator, X, y, n_folds = 3, scoring_func="neg_mean_squared_error"):
+    kf = KFold(n_folds, shuffle=True, random_state=42).get_n_splits(X)
+    score = -cross_val_score(estimator, X, y, scoring=scoring_func, cv = kf)
     return(score)
 
 train, test = read_train_test()
@@ -216,6 +278,7 @@ handle_missing(ds)
 ds = encode(ds)
 simplify_features1(ds)
 simplify_features2(ds)
+
 num_columns, cat_columns = get_predictors(ds)
 
 print("Numerical features : " + str(len(num_columns)))
@@ -230,33 +293,115 @@ skewness = encoded_ds[num_columns].apply(lambda x: skew(x))
 skewness = skewness[abs(skewness) > 0.5]
 print(str(skewness.shape[0]) + " skewed numerical features to log transform")
 skewed_features = skewness.index
-#encoded_ds[skewed_features] = np.log1p(encoded_ds[skewed_features])
-#lam = 0.15
-#encoded_ds[skewed_features] = boxcox1p(encoded_ds[skewed_features], lam)
+encoded_ds[skewed_features] = np.log1p(encoded_ds[skewed_features])
 
-train_y = train.SalePrice
+train_y = np.log1p(train.SalePrice)
 train_X = (encoded_ds.loc[encoded_ds.dataset == "train"]).drop(['dataset'], axis=1)
 test_X = (encoded_ds.loc[encoded_ds.dataset == "test"]).drop(['dataset'], axis=1)
 
+#########################################################################################################
 
-my_model = XGBRegressor(n_estimators=140)
+model_xgb = XGBRegressor(colsample_bytree=0.4603, gamma=0.0468, 
+                             learning_rate=0.05, max_depth=4, 
+                             min_child_weight=1.7817, n_estimators=2500,
+                             reg_alpha=0.4640, reg_lambda=0.88,
+                             subsample=0.5213, silent=1,
+                             random_state =7, nthread = -1)
 
-estimator = Pipeline([("imputer", Imputer()),
-                      ("xgb", my_model)])
+model_lasso = make_pipeline(RobustScaler(), Lasso(alpha =0.0005, random_state=1))
+model_ENet = make_pipeline(RobustScaler(), ElasticNet(alpha=0.0005, l1_ratio=.9, random_state=3))
+model_KRR = KernelRidge(alpha=0.6, kernel='polynomial', degree=2, coef0=2.5)
+model_GBoost = GradientBoostingRegressor(n_estimators=3000, learning_rate=0.05,
+                                   max_depth=4, max_features='sqrt',
+                                   min_samples_leaf=15, min_samples_split=10, 
+                                   loss='huber', random_state =5)
 
-estimator.set_params(imputer__strategy="most_frequent" ,xgb__learning_rate=0.09)
-score = np.sqrt(score_model(estimator, train_X, n_folds = 3, scoring_func="neg_mean_squared_error"))
-print(score.mean())
+model_lgb = lgb.LGBMRegressor(objective='regression',num_leaves=5,
+                              learning_rate=0.05, n_estimators=720,
+                              max_bin = 55, bagging_fraction = 0.8,
+                              bagging_freq = 5, feature_fraction = 0.2319,
+                              feature_fraction_seed=9, bagging_seed=9,
+                              min_data_in_leaf =6, min_sum_hessian_in_leaf = 11)
+model_rforest = RandomForestRegressor(50)
 
-estimator.fit(train_X, train_y)
+score_xgb = np.sqrt(score_model(model_xgb, train_X, train_y))
+score_lasso = np.sqrt(score_model(model_lasso, train_X, train_y))
+score_ENet = np.sqrt(score_model(model_ENet, train_X, train_y))
+score_KRR = np.sqrt(score_model(model_KRR, train_X, train_y))
+score_GBoost = np.sqrt(score_model(model_GBoost, train_X, train_y))
+score_model_lgb = np.sqrt(score_model(model_lgb, train_X, train_y))
+score_forest = np.sqrt(score_model(model_rforest, train_X, train_y))
 
-predicted_prices = estimator.predict(test_X)
+print("\nXGBoost score: {:.4f} ({:.4f})\n".format(score_xgb.mean(), score_xgb.std()))
+print("\nLasso score: {:.4f} ({:.4f})\n".format(score_lasso.mean(), score_lasso.std()))
+print("\nEnet score: {:.4f} ({:.4f})\n".format(score_ENet.mean(), score_ENet.std()))
+print("\nKRR score: {:.4f} ({:.4f})\n".format(score_KRR.mean(), score_KRR.std()))
+print("\nGBoost score: {:.4f} ({:.4f})\n".format(score_GBoost.mean(), score_GBoost.std()))
+print("\nmodel_lgb score: {:.4f} ({:.4f})\n".format(score_model_lgb.mean(), score_model_lgb.std()))
+print("\nRandom Forest score: {:.4f} ({:.4f})\n".format(score_forest.mean(), score_model_lgb.std()))
 
+model_xgb.fit(train_X, train_y)
+model_lasso.fit(train_X, train_y)
+model_ENet.fit(train_X, train_y)
+model_KRR.fit(train_X, train_y)
+model_GBoost.fit(train_X, train_y)
+model_lgb.fit(train_X, train_y)
+model_rforest.fit(train_X, train_y)
+
+
+averaged_models = AveragingModels(models = (model_ENet, model_GBoost, model_xgb, model_lgb, model_lasso))
+
+score_avg = np.sqrt(score_model(averaged_models, train_X, train_y))
+print(" Averaged base models score: {:.4f} ({:.4f})\n".format(score_avg.mean(), score_avg.std()))
+
+averaged_models.fit(train_X, train_y)
+predicted_prices = np.expm1(averaged_models.predict(test_X))
 print(predicted_prices)
+my_submission = pd.DataFrame({'Id': test.Id, 'SalePrice': predicted_prices})
+my_submission.to_csv('submission_avg.csv', index=False)
+
+
+stacked_averaged_models = StackingAveragedModels(base_models = (model_ENet, model_GBoost),
+                                                 meta_model = model_lasso)
+
+score_stacked_averaged = np.sqrt(score_model(stacked_averaged_models, train_X, train_y))
+print(" Stacked Averaged base models score: {:.4f} ({:.4f})\n".format(score_stacked_averaged.mean(), score_stacked_averaged.std()))
+
+stacked_averaged_models.fit(train_X, train_y)
+predicted_prices_stacked_averaged = np.expm1(stacked_averaged_models.predict(test_X))
+print(predicted_prices_stacked_averaged)
+
+predicted_prices_xgboost = np.expm1(model_xgb.predict(test_X))
+print(predicted_prices_xgboost)
+
+predicted_prices_lgb = np.expm1(model_lgb.predict(test_X))
+print(predicted_prices_lgb)
+
+predicted_prices = predicted_prices_stacked_averaged*0.4 + predicted_prices_xgboost*0.3 + predicted_prices_lgb*0.3
 
 my_submission = pd.DataFrame({'Id': test.Id, 'SalePrice': predicted_prices})
-my_submission.to_csv('submission_xgboost_pipeline_fe.csv', index=False)
+my_submission.to_csv('submission_ensemble.csv', index=False)
 
-lasso = make_pipeline(RobustScaler(), Lasso(alpha =0.0005, random_state=1))
-score_lasso = np.sqrt(score_model(lasso, train_X, n_folds = 3, scoring_func="neg_mean_squared_error"))
-print("\nLasso score: {:.4f} ({:.4f})\n".format(score_lasso.mean(), score_lasso.std()))
+
+
+
+
+
+
+
+
+
+
+from sklearn.model_selection import GridSearchCV
+
+hyperparameters = { 'n_estimators': [2500],
+                    'max_depth': [4],
+                   'learning_rate': [0.05],
+                    'reg_lambda': [0.88, 0.885]
+                  }
+clf = GridSearchCV(model_xgb, hyperparameters, cv=3)
+clf.fit(train_X, train_y)
+clf.best_params_
+clf.refit
+score_clf = np.sqrt(score_model(clf, train_X, n_folds = 3, scoring_func="neg_mean_squared_error"))
+print(score_clf.mean())
