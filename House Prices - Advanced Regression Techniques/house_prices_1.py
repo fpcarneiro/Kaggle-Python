@@ -11,10 +11,12 @@ import numpy as np
 from scipy.stats import skew
 import lightgbm as lgb
 from sklearn.base import BaseEstimator, TransformerMixin, RegressorMixin, clone
+#from sklearn.decomposition import PCA, KernelPCA
 
 class AveragingModels(BaseEstimator, RegressorMixin, TransformerMixin):
-    def __init__(self, models):
+    def __init__(self, models, weights = "same"):
         self.models = models
+        self.weights = weights
         
     # we define clones of the original models to fit the data in
     def fit(self, X, y):
@@ -31,7 +33,12 @@ class AveragingModels(BaseEstimator, RegressorMixin, TransformerMixin):
         predictions = np.column_stack([
             model.predict(X) for model in self.models_
         ])
-        return np.mean(predictions, axis=1)
+        if self.weights == "same":
+            return np.mean(predictions, axis=1)
+        else:
+            for i in range(len(self.models_)):
+                predictions[:, i] *= self.weights[i]
+            return np.sum(predictions, axis=1)
 
 class StackingAveragedModels(BaseEstimator, RegressorMixin, TransformerMixin):
     def __init__(self, base_models, meta_model, n_folds=3):
@@ -115,8 +122,8 @@ def hot_encode(dataset, drop_list = ['dataset', 'Id']):
     #return (pd.merge(encoded, dataset[['Id'] + drop_list], how='inner', on=['Id']))
     return (pd.concat([ dataset[drop_list] , encoded], axis=1))
 
-def log_transform(dataset, feature):
-    dataset[feature] = np.log1p(dataset[feature].values)
+#def log_transform(dataset, feature):
+#    dataset[feature] = np.log1p(dataset[feature].values)
 
 def quadratic(dataset, feature):
     dataset[feature+'2'] = dataset[feature]**2
@@ -264,6 +271,13 @@ def score_model(estimator, X, y, n_folds = 3, scoring_func="neg_mean_squared_err
     score = -cross_val_score(estimator, X, y, scoring=scoring_func, cv = kf)
     return(score)
 
+def log_transform(dataset, cols, threshold =0.75):
+    skewness = dataset[cols].apply(lambda x: skew(x))
+    skewness = skewness[abs(skewness) > threshold]
+    print(str(skewness.shape[0]) + " skewed numerical features to log transform")
+    skewed_features = skewness.index
+    dataset[skewed_features] = np.log1p(dataset[skewed_features])
+
 train, test = read_train_test()
 
 train = train.drop(train[(train['GrLivArea']>4000) & (train['SalePrice']<300000)].index)
@@ -279,6 +293,37 @@ ds = encode(ds)
 simplify_features1(ds)
 simplify_features2(ds)
 
+ds["OverallQual-s2"] = ds["OverallQual"] ** 2
+ds["OverallQual-s3"] = ds["OverallQual"] ** 3
+ds["OverallQual-Sq"] = np.sqrt(ds["OverallQual"])
+ds["AllSF-2"] = ds["AllSF"] ** 2
+ds["AllSF-3"] = ds["AllSF"] ** 3
+ds["AllSF-Sq"] = np.sqrt(ds["AllSF"])
+ds["AllFlrsSF-2"] = ds["AllFlrsSF"] ** 2
+ds["AllFlrsSF-3"] = ds["AllFlrsSF"] ** 3
+ds["AllFlrsSF-Sq"] = np.sqrt(ds["AllFlrsSF"])
+ds["GrLivArea-2"] = ds["GrLivArea"] ** 2
+ds["GrLivArea-3"] = ds["GrLivArea"] ** 3
+ds["GrLivArea-Sq"] = np.sqrt(ds["GrLivArea"])
+ds["SimplOverallQual-s2"] = ds["SimplOverallQual"] ** 2
+ds["SimplOverallQual-s3"] = ds["SimplOverallQual"] ** 3
+ds["SimplOverallQual-Sq"] = np.sqrt(ds["SimplOverallQual"])
+ds["ExterQual-2"] = ds["ExterQual"] ** 2
+ds["ExterQual-3"] = ds["ExterQual"] ** 3
+ds["ExterQual-Sq"] = np.sqrt(ds["ExterQual"])
+ds["GarageCars-2"] = ds["GarageCars"] ** 2
+ds["GarageCars-3"] = ds["GarageCars"] ** 3
+ds["GarageCars-Sq"] = np.sqrt(ds["GarageCars"])
+ds["TotalBath-2"] = ds["TotalBath"] ** 2
+ds["TotalBath-3"] = ds["TotalBath"] ** 3
+ds["TotalBath-Sq"] = np.sqrt(ds["TotalBath"])
+ds["KitchenQual-2"] = ds["KitchenQual"] ** 2
+ds["KitchenQual-3"] = ds["KitchenQual"] ** 3
+ds["KitchenQual-Sq"] = np.sqrt(ds["KitchenQual"])
+ds["GarageScore-2"] = ds["GarageScore"] ** 2
+ds["GarageScore-3"] = ds["GarageScore"] ** 3
+ds["GarageScore-Sq"] = np.sqrt(ds["GarageScore"])
+
 num_columns, cat_columns = get_predictors(ds)
 
 print("Numerical features : " + str(len(num_columns)))
@@ -289,11 +334,7 @@ predictors = num_columns + cat_columns
 ds = ds[predictors + ['Id','dataset']]
 encoded_ds = hot_encode(ds)
 
-skewness = encoded_ds[num_columns].apply(lambda x: skew(x))
-skewness = skewness[abs(skewness) > 0.5]
-print(str(skewness.shape[0]) + " skewed numerical features to log transform")
-skewed_features = skewness.index
-encoded_ds[skewed_features] = np.log1p(encoded_ds[skewed_features])
+log_transform(encoded_ds, num_columns, 0.5)
 
 train_y = np.log1p(train.SalePrice)
 train_X = (encoded_ds.loc[encoded_ds.dataset == "train"]).drop(['dataset'], axis=1)
@@ -349,7 +390,8 @@ model_lgb.fit(train_X, train_y)
 model_rforest.fit(train_X, train_y)
 
 
-averaged_models = AveragingModels(models = (model_ENet, model_GBoost, model_xgb, model_lgb, model_lasso))
+averaged_models = AveragingModels(models = (model_ENet, model_GBoost, model_xgb, model_lgb, model_lasso), 
+                                  weights = [0.3, 0.1, 0.1, 0.1, 0.4])
 
 score_avg = np.sqrt(score_model(averaged_models, train_X, train_y))
 print(" Averaged base models score: {:.4f} ({:.4f})\n".format(score_avg.mean(), score_avg.std()))
@@ -377,7 +419,7 @@ print(predicted_prices_xgboost)
 predicted_prices_lgb = np.expm1(model_lgb.predict(test_X))
 print(predicted_prices_lgb)
 
-predicted_prices = predicted_prices_stacked_averaged*0.6 + predicted_prices_xgboost*0.2 + predicted_prices_lgb*0.2
+predicted_prices = predicted_prices_stacked_averaged*0.7 + predicted_prices_xgboost*0.15 + predicted_prices_lgb*0.15
 
 my_submission = pd.DataFrame({'Id': test.Id, 'SalePrice': predicted_prices})
 my_submission.to_csv('submission_ensemble.csv', index=False)
@@ -394,14 +436,11 @@ my_submission.to_csv('submission_ensemble.csv', index=False)
 
 from sklearn.model_selection import GridSearchCV
 
-hyperparameters = { 'n_estimators': [2500],
-                    'max_depth': [4],
-                   'learning_rate': [0.05],
-                    'reg_lambda': [0.88, 0.885]
+hyperparameters = { 'weights': ["same", [0.3, 0.1, 0.1, 0.1, 0.4], [0.4, 0.1, 0.1, 0.1, 0.3]]
                   }
-clf = GridSearchCV(model_xgb, hyperparameters, cv=3)
+clf = GridSearchCV(averaged_models, hyperparameters, cv=3)
 clf.fit(train_X, train_y)
-clf.best_params_
+print(clf.best_params_)
 clf.refit
 score_clf = np.sqrt(score_model(clf, train_X, n_folds = 3, scoring_func="neg_mean_squared_error"))
 print(score_clf.mean())
