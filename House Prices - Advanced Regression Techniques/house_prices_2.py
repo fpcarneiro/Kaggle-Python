@@ -138,11 +138,7 @@ def get_predictors(dataset, drop_list = ['dataset', 'Id']):
 
 def hot_encode(dataset, drop_list = ['dataset', 'Id']):
     encoded = pd.get_dummies(dataset.drop(drop_list, axis=1))
-    #return (pd.merge(encoded, dataset[['Id'] + drop_list], how='inner', on=['Id']))
     return (pd.concat([ dataset[drop_list] , encoded], axis=1))
-
-#def log_transform(dataset, feature):
-#    dataset[feature] = np.log1p(dataset[feature].values)
 
 def quadratic(dataset, feature):
     dataset[feature+'2'] = dataset[feature]**2
@@ -154,23 +150,41 @@ def check_missing(dataset):
     return(missing_data)
 
 def handle_missing(dataset):
-    cols_mode = ['MSZoning', 'SaleType', 'Electrical', 'Exterior1st', 'Exterior2nd']
-    no_cols = ["PoolQC", "MiscFeature", "Alley", "Fence", "FireplaceQu", "GarageType", "GarageFinish", "GarageQual", "GarageCond", "BsmtQual",
-               "BsmtCond", "BsmtExposure", "BsmtFinType1", "BsmtFinType2", "MasVnrType"]
-    zero_cols = ["GarageYrBlt", "LotFrontage", "GarageArea", "GarageCars", "BsmtFinSF1", "BsmtFinSF2", "BsmtUnfSF", "TotalBsmtSF", "BsmtFullBath",
-                 "BsmtHalfBath", "MasVnrArea"]
+    #cols_mode = ['LotFrontage', 'MSZoning', 'SaleType', 'Electrical', 'Exterior1st', 'Exterior2nd']
+    cols_mode = ['MSZoning', 'SaleType', 'Electrical', 'Exterior1st', 'Exterior2nd', 'Functional', 'Utilities', 'KitchenQual']
+    no_cols = ["PoolQC", "MiscFeature", "Alley", "Fence", "MasVnrType", "FireplaceQu", 
+               "GarageQual", "GarageCond", "GarageFinish", "GarageType", "BsmtExposure", 
+               "BsmtCond", "BsmtQual", "BsmtFinType1", "BsmtFinType2"]
+    zero_cols = ["MasVnrArea", "BsmtFullBath", "BsmtHalfBath", "BsmtFinSF1", "BsmtFinSF2", "BsmtUnfSF", "TotalBsmtSF",
+                 "GarageArea", "GarageCars"]
     
     missing_dict = dict(zip(zero_cols,[0] * len(zero_cols)))
     missing_dict.update(dict(zip(no_cols,["No"] * len(no_cols))))
-    missing_dict["Functional"] = "Typ"
-    missing_dict["Utilities"] = "AllPub"
-    missing_dict["KitchenQual"] = "TA"
     
     for (k, v) in missing_dict.items():
         dataset.loc[:, k] = dataset.loc[:, k].fillna(v)
 
     for col in cols_mode:
         dataset[col] = dataset[col].fillna(dataset[col].mode()[0])
+    
+    dataset.loc[dataset.GarageYrBlt.isnull(),'GarageYrBlt'] = dataset.loc[dataset.GarageYrBlt.isnull(),'YearBuilt']
+    
+    df_frontage = pd.get_dummies(dataset)
+    lf_train = df_frontage.dropna()
+    lf_train_y = lf_train.LotFrontage
+    lf_train_X = lf_train.drop('LotFrontage',axis=1)
+    lr = Ridge()
+    lr.fit(lf_train_X, lf_train_y)
+    nan_frontage = dataset.LotFrontage.isnull()
+    X = df_frontage[nan_frontage].drop('LotFrontage',axis=1)
+    y = lr.predict(X)
+    dataset.loc[nan_frontage,'LotFrontage'] = y
+
+
+def add_columns_was_missing(dataset):
+    cols_with_missing = (col for col in dataset.columns if dataset[col].isnull().any())
+    for col in cols_with_missing:
+        dataset[col + '_was_missing'] = dataset[col].isnull()
 
 def encode(dataset):
     quality_scale = {"No" : 0, "Po" : 1, "Fa" : 2, "TA" : 3, "Gd" : 4, "Ex" : 5}
@@ -213,6 +227,12 @@ def simplify_features1(dataset):
                      4 : 2, 5 : 2, 6 : 2 # good
                      }
     
+    functional_scale = {1 : 1, 2 : 1, # bad
+                            3 : 2, 4 : 2, # major
+                            5 : 3, 6 : 3, 7 : 3, # minor
+                            8 : 4 # typical
+                            }
+    
     simpl_dict = {}
     simpl_dict["OverallQual"] = overall_scale
     simpl_dict["OverallCond"] = overall_scale
@@ -220,11 +240,7 @@ def simplify_features1(dataset):
     simpl_dict["GarageCond"] = quality_scale
     simpl_dict["GarageQual"] = quality_scale
     simpl_dict["FireplaceQu"] = quality_scale
-    simpl_dict["Functional"] = {1 : 1, 2 : 1, # bad
-                            3 : 2, 4 : 2, # major
-                            5 : 3, 6 : 3, 7 : 3, # minor
-                            8 : 4 # typical
-                            }
+    simpl_dict["Functional"] = functional_scale
     simpl_dict["KitchenQual"] = quality_scale
     simpl_dict["HeatingQC"] = quality_scale
     simpl_dict["BsmtFinType1"] = quality_scale
@@ -283,7 +299,47 @@ def simplify_features2(dataset):
                                                       "Family" : 0, "Normal" : 0, "Partial" : 1})
     #dataset['TotalSF'] = dataset['TotalBsmtSF'] + dataset['1stFlrSF'] + dataset['2ndFlrSF']
     
+    #dataset['LowQualFinFrac'] = dataset['LowQualFinSF']/dataset['GrLivArea']
+    #dataset['1stFlrFrac'] = dataset['1stFlrSF']/dataset['GrLivArea']
+    #dataset['2ndFlrFrac'] = dataset['2ndFlrSF']/dataset['GrLivArea']
+
+    #dataset['TotalAreaSF'] = dataset['GrLivArea']+ dataset['TotalBsmtSF']+dataset['GarageArea']+dataset['EnclosedPorch']+dataset['ScreenPorch']
+    #dataset['LivingAreaSF'] = dataset['1stFlrSF'] + dataset['2ndFlrSF'] + dataset['BsmtGLQSF'] + dataset['BsmtALQSF'] + dataset['BsmtBLQSF']
+    #dataset['StorageAreaSF'] = dataset['LowQualFinSF'] + dataset['BsmtRecSF'] + dataset['BsmtLwQSF'] + dataset['BsmtUnfSF'] + dataset['GarageArea']
+    
 #obj_df["num_cylinders"].value_counts()
+    
+def polinomial_features(dataset):
+    dataset["OverallQual-s2"] = dataset["OverallQual"] ** 2
+    dataset["OverallQual-s3"] = dataset["OverallQual"] ** 3
+    dataset["OverallQual-Sq"] = np.sqrt(dataset["OverallQual"])
+    dataset["AllSF-2"] = dataset["AllSF"] ** 2
+    dataset["AllSF-3"] = dataset["AllSF"] ** 3
+    dataset["AllSF-Sq"] = np.sqrt(dataset["AllSF"])
+    dataset["AllFlrsSF-2"] = dataset["AllFlrsSF"] ** 2
+    dataset["AllFlrsSF-3"] = dataset["AllFlrsSF"] ** 3
+    dataset["AllFlrsSF-Sq"] = np.sqrt(dataset["AllFlrsSF"])
+    dataset["GrLivArea-2"] = dataset["GrLivArea"] ** 2
+    dataset["GrLivArea-3"] = dataset["GrLivArea"] ** 3
+    dataset["GrLivArea-Sq"] = np.sqrt(dataset["GrLivArea"])
+    dataset["SimplOverallQual-s2"] = dataset["SimplOverallQual"] ** 2
+    dataset["SimplOverallQual-s3"] = dataset["SimplOverallQual"] ** 3
+    dataset["SimplOverallQual-Sq"] = np.sqrt(dataset["SimplOverallQual"])
+    dataset["ExterQual-2"] = dataset["ExterQual"] ** 2
+    dataset["ExterQual-3"] = dataset["ExterQual"] ** 3
+    dataset["ExterQual-Sq"] = np.sqrt(dataset["ExterQual"])
+    dataset["GarageCars-2"] = dataset["GarageCars"] ** 2
+    dataset["GarageCars-3"] = dataset["GarageCars"] ** 3
+    dataset["GarageCars-Sq"] = np.sqrt(dataset["GarageCars"])
+    dataset["TotalBath-2"] = dataset["TotalBath"] ** 2
+    dataset["TotalBath-3"] = dataset["TotalBath"] ** 3
+    dataset["TotalBath-Sq"] = np.sqrt(dataset["TotalBath"])
+    dataset["KitchenQual-2"] = dataset["KitchenQual"] ** 2
+    dataset["KitchenQual-3"] = dataset["KitchenQual"] ** 3
+    dataset["KitchenQual-Sq"] = np.sqrt(dataset["KitchenQual"])
+    dataset["GarageScore-2"] = dataset["GarageScore"] ** 2
+    dataset["GarageScore-3"] = dataset["GarageScore"] ** 3
+    dataset["GarageScore-Sq"] = np.sqrt(dataset["GarageScore"])
     
 def score_model(estimator, X, y, n_folds = 3, scoring_func="neg_mean_squared_error"):
     kf = KFold(n_folds, shuffle=True, random_state=42).get_n_splits(X)
@@ -304,6 +360,8 @@ train = train.drop(train[(train['GrLivArea']>4000) & (train['SalePrice']<300000)
 
 ds = concat_train_test(train.drop(['SalePrice'], axis=1), test)
 
+#add_columns_was_missing(ds)
+
 #ds = ds.drop(high_occurance_missing(ds, 0.8), axis=1)
 ds = convert_numeric2category(ds)
 handle_missing(ds)
@@ -311,37 +369,7 @@ handle_missing(ds)
 ds = encode(ds)
 simplify_features1(ds)
 simplify_features2(ds)
-
-ds["OverallQual-s2"] = ds["OverallQual"] ** 2
-ds["OverallQual-s3"] = ds["OverallQual"] ** 3
-ds["OverallQual-Sq"] = np.sqrt(ds["OverallQual"])
-ds["AllSF-2"] = ds["AllSF"] ** 2
-ds["AllSF-3"] = ds["AllSF"] ** 3
-ds["AllSF-Sq"] = np.sqrt(ds["AllSF"])
-ds["AllFlrsSF-2"] = ds["AllFlrsSF"] ** 2
-ds["AllFlrsSF-3"] = ds["AllFlrsSF"] ** 3
-ds["AllFlrsSF-Sq"] = np.sqrt(ds["AllFlrsSF"])
-ds["GrLivArea-2"] = ds["GrLivArea"] ** 2
-ds["GrLivArea-3"] = ds["GrLivArea"] ** 3
-ds["GrLivArea-Sq"] = np.sqrt(ds["GrLivArea"])
-ds["SimplOverallQual-s2"] = ds["SimplOverallQual"] ** 2
-ds["SimplOverallQual-s3"] = ds["SimplOverallQual"] ** 3
-ds["SimplOverallQual-Sq"] = np.sqrt(ds["SimplOverallQual"])
-ds["ExterQual-2"] = ds["ExterQual"] ** 2
-ds["ExterQual-3"] = ds["ExterQual"] ** 3
-ds["ExterQual-Sq"] = np.sqrt(ds["ExterQual"])
-ds["GarageCars-2"] = ds["GarageCars"] ** 2
-ds["GarageCars-3"] = ds["GarageCars"] ** 3
-ds["GarageCars-Sq"] = np.sqrt(ds["GarageCars"])
-ds["TotalBath-2"] = ds["TotalBath"] ** 2
-ds["TotalBath-3"] = ds["TotalBath"] ** 3
-ds["TotalBath-Sq"] = np.sqrt(ds["TotalBath"])
-ds["KitchenQual-2"] = ds["KitchenQual"] ** 2
-ds["KitchenQual-3"] = ds["KitchenQual"] ** 3
-ds["KitchenQual-Sq"] = np.sqrt(ds["KitchenQual"])
-ds["GarageScore-2"] = ds["GarageScore"] ** 2
-ds["GarageScore-3"] = ds["GarageScore"] ** 3
-ds["GarageScore-Sq"] = np.sqrt(ds["GarageScore"])
+polinomial_features(ds)
 
 num_columns, cat_columns = get_predictors(ds)
 
@@ -353,7 +381,9 @@ predictors = num_columns + cat_columns
 ds = ds[predictors + ['Id','dataset']]
 encoded_ds = hot_encode(ds)
 
-log_transform(encoded_ds, num_columns, 0.5)
+bool_columns = list(encoded_ds.select_dtypes(include=['bool']).columns)
+
+log_transform(encoded_ds, list(set(num_columns)-set(bool_columns)), 0.5)
 
 train_y = np.log1p(train.SalePrice)
 train_X = (encoded_ds.loc[encoded_ds.dataset == "train"]).drop(['dataset'], axis=1)
@@ -382,14 +412,10 @@ model_lasso = Lasso(alpha =0.0005, random_state=1)
 model_svr = SVR(C = 15, epsilon = 0.009, gamma = 0.0004, kernel = 'rbf')
 model_KRR = KernelRidge(alpha=0.6, kernel='polynomial', degree=2, coef0=2.5)
 model_ENet = ElasticNet(alpha=0.0005, l1_ratio=.9, random_state=3)
-
-
-model_lsvr = LinearSVR()
-
-model_sgd = SGDRegressor()
-
 model_byr = BayesianRidge()
 
+model_lsvr = LinearSVR()
+model_sgd = SGDRegressor()
 model_extra = ExtraTreesRegressor()
 
 model_xgb = XGBRegressor(colsample_bytree=0.4603, gamma=0.0468, 
@@ -398,9 +424,6 @@ model_xgb = XGBRegressor(colsample_bytree=0.4603, gamma=0.0468,
                              reg_alpha=0.4640, reg_lambda=0.88,
                              subsample=0.5213, silent=1,
                              random_state =7, nthread = -1)
-
-
-
 
 model_GBoost = GradientBoostingRegressor(n_estimators=3000, learning_rate=0.05,
                                    max_depth=4, max_features='sqrt',
@@ -420,11 +443,7 @@ models = [model_ridge, model_xgb, model_lasso, model_ENet, model_KRR,
           model_sgd, model_byr, model_extra]
 names = ["ridge", "xgb", "lasso", "ENet", "KRR", "GBoost",
          "lgb", "rforest", "svr", "lsvr", "sgd", "byr", "extra"]
-
-#for name, model in zip(names, models):
-#    score = np.sqrt(score_model(model, train_X, train_y))
-#    print("{} score: {:.4f} ({:.4f})\n".format(name, score.mean(), score.std()))
-    
+   
 scores = [(np.sqrt(score_model(model, train_X, train_y))).mean() for name, model in zip(names, models)]
 tab = pd.DataFrame({ "Model" : names, "Score" : scores })
 tab = tab.sort_values(by=['Score'], ascending = True)
@@ -433,8 +452,8 @@ print(tab)
 for model in models:
     model.fit(train_X, train_y)
 
-averaged_models = AveragingModels(models = (model_lasso, model_ENet, model_svr, model_byr, model_ridge, model_GBoost, model_xgb), 
-                                  weights = [0.25, 0.25, 0.2, 0.1, 0.1, 0.05, 0.05])
+averaged_models = AveragingModels(models = (model_lasso, model_ENet, model_svr,
+                                            model_ridge, model_byr, model_KRR, model_GBoost))
 
 score_avg = np.sqrt(score_model(averaged_models, train_X, train_y))
 print(" Averaged base models score: {:.6f} ({:.6f})\n".format(score_avg.mean(), score_avg.std()))
@@ -446,8 +465,8 @@ my_submission = pd.DataFrame({'Id': test.Id, 'SalePrice': predicted_prices})
 my_submission.to_csv('submission_avg.csv', index=False)
 
 
-stacked_averaged_models = StackingAveragedModels(base_models = (model_ENet, model_svr, model_byr, model_ridge, 
-                                                                model_GBoost, model_xgb, model_lgb, model_KRR),
+stacked_averaged_models = StackingAveragedModels(base_models = (model_ENet, model_svr,
+                                            model_ridge, model_byr, model_KRR, model_GBoost),
                                                  meta_model = model_lasso)
 
 score_stacked_averaged = np.sqrt(score_model(stacked_averaged_models, train_X, train_y))
