@@ -62,8 +62,8 @@ class StackingAveragedModels(BaseEstimator, RegressorMixin, TransformerMixin):
             for train_index, holdout_index in kfold.split(X, y):
                 instance = clone(model)
                 self.base_models_[i].append(instance)
-                instance.fit(X.iloc[train_index], y.iloc[train_index])
-                y_pred = instance.predict(X.iloc[holdout_index])
+                instance.fit(X[train_index], y[train_index])
+                y_pred = instance.predict(X[holdout_index])
                 out_of_fold_predictions[holdout_index, i] = y_pred        
         # Now train the cloned  meta-model using the out-of-fold predictions as new feature
         self.meta_model_.fit(out_of_fold_predictions, y)
@@ -362,6 +362,7 @@ test_X = (encoded_ds.loc[encoded_ds.dataset == "test"]).drop(['dataset'], axis=1
 scaler = RobustScaler()
 train_X = scaler.fit(train_X).transform(train_X)
 test_X = scaler.transform(test_X)
+train_y = train_y.as_matrix()
 
 #########################################################################################################
 hyperparameters_ridge = {'alpha': list(np.arange(9.4, 9.51, 0.01))}
@@ -420,18 +421,23 @@ models = [model_ridge, model_xgb, model_lasso, model_ENet, model_KRR,
 names = ["ridge", "xgb", "lasso", "ENet", "KRR", "GBoost",
          "lgb", "rforest", "svr", "lsvr", "sgd", "byr", "extra"]
 
-for name, model in zip(names, models):
-    score = np.sqrt(score_model(model, train_X, train_y))
-    print("{} score: {:.4f} ({:.4f})\n".format(name, score.mean(), score.std()))
+#for name, model in zip(names, models):
+#    score = np.sqrt(score_model(model, train_X, train_y))
+#    print("{} score: {:.4f} ({:.4f})\n".format(name, score.mean(), score.std()))
+    
+scores = [(np.sqrt(score_model(model, train_X, train_y))).mean() for name, model in zip(names, models)]
+tab = pd.DataFrame({ "Model" : names, "Score" : scores })
+tab = tab.sort_values(by=['Score'], ascending = True)
+print(tab)
 
 for model in models:
     model.fit(train_X, train_y)
 
-averaged_models = AveragingModels(models = (model_lasso, model_ENet, model_svr, model_byr, model_ridge, model_GBoost, model_lgb), 
+averaged_models = AveragingModels(models = (model_lasso, model_ENet, model_svr, model_byr, model_ridge, model_GBoost, model_xgb), 
                                   weights = [0.25, 0.25, 0.2, 0.1, 0.1, 0.05, 0.05])
 
 score_avg = np.sqrt(score_model(averaged_models, train_X, train_y))
-print(" Averaged base models score: {:.4f} ({:.4f})\n".format(score_avg.mean(), score_avg.std()))
+print(" Averaged base models score: {:.6f} ({:.6f})\n".format(score_avg.mean(), score_avg.std()))
 
 averaged_models.fit(train_X, train_y)
 predicted_prices = np.expm1(averaged_models.predict(test_X))
@@ -440,11 +446,12 @@ my_submission = pd.DataFrame({'Id': test.Id, 'SalePrice': predicted_prices})
 my_submission.to_csv('submission_avg.csv', index=False)
 
 
-stacked_averaged_models = StackingAveragedModels(base_models = (model_ENet, model_GBoost),
+stacked_averaged_models = StackingAveragedModels(base_models = (model_ENet, model_svr, model_byr, model_ridge, 
+                                                                model_GBoost, model_xgb, model_lgb, model_KRR),
                                                  meta_model = model_lasso)
 
 score_stacked_averaged = np.sqrt(score_model(stacked_averaged_models, train_X, train_y))
-print(" Stacked Averaged base models score: {:.4f} ({:.4f})\n".format(score_stacked_averaged.mean(), score_stacked_averaged.std()))
+print(" Stacked Averaged base models score: {:.6f} ({:.6f})\n".format(score_stacked_averaged.mean(), score_stacked_averaged.std()))
 
 stacked_averaged_models.fit(train_X, train_y)
 predicted_prices_stacked_averaged = np.expm1(stacked_averaged_models.predict(test_X))
@@ -460,7 +467,3 @@ predicted_prices = predicted_prices_stacked_averaged*0.7 + predicted_prices_xgbo
 
 my_submission = pd.DataFrame({'Id': test.Id, 'SalePrice': predicted_prices})
 my_submission.to_csv('submission_ensemble.csv', index=False)
-
-
-
-
