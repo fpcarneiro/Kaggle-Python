@@ -23,11 +23,11 @@ cols_with_missing_test = [col for col in numeric_cols if test[col].isnull().any(
 
 cols_with_missing = list(set(cols_with_missing_train + cols_with_missing_test))
 
-reduced_X_train = train.drop(cols_with_missing_train, axis=1)
-reduced_X_test  = test.drop(cols_with_missing_train, axis=1)
+reduced_X_train = (train.select_dtypes(exclude=['object'])).drop(cols_with_missing, axis=1)
+reduced_X_test  = (test.select_dtypes(exclude=['object'])).drop(cols_with_missing, axis=1)
 
 # Create training predictors data
-train_X = reduced_X_train.drop('SalePrice', axis=1)
+train_X = reduced_X_train.drop('SalePrice', axis=1)          
 
 my_model = RandomForestRegressor()
 my_model.fit(train_X, train_y)

@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 from scipy.stats import skew
-from sklearn.linear_model import Ridge
 from sklearn.model_selection import KFold, cross_val_score
 
 DATADIR = "input/"
@@ -21,15 +20,10 @@ def concat_train_test(train, test, ignore_index=False):
     return dataset
 
 def convert_numeric2category(dataset):
-    # Some numerical features are actually really categories
-    mydata = dataset.replace({"MSSubClass" : {20 : "SC20", 30 : "SC30", 40 : "SC40", 45 : "SC45", 
-                                       50 : "SC50", 60 : "SC60", 70 : "SC70", 75 : "SC75", 
-                                       80 : "SC80", 85 : "SC85", 90 : "SC90", 120 : "SC120", 
-                                       150 : "SC150", 160 : "SC160", 180 : "SC180", 190 : "SC190"},
-                       "MoSold" : {1 : "Jan", 2 : "Feb", 3 : "Mar", 4 : "Apr", 5 : "May", 6 : "Jun",
-                                   7 : "Jul", 8 : "Aug", 9 : "Sep", 10 : "Oct", 11 : "Nov", 12 : "Dec"}
-                      })
-    return(mydata)
+    NumStr = ["MSSubClass","MoSold"]
+    
+    for col in NumStr:
+        dataset[col]=dataset[col].astype(str)
 
 def high_occurance_missing(dataset, threshold):    
     return([c for c in list(dataset.columns) if ( dataset[c].isnull().sum() / len(dataset) ) >= threshold])
@@ -54,11 +48,11 @@ def check_missing(dataset):
     return(missing_data)
 
 def handle_missing(dataset, add_was_missing_columns = True):
-    
+    cols_added = []
     if add_was_missing_columns :
         cols_added = add_columns_was_missing(dataset)
     
-    cols_mode = ['MSZoning', 'SaleType', 'Electrical', 'Exterior1st', 'Exterior2nd', 'Functional', 'Utilities', 'KitchenQual']
+    cols_mode = ['LotFrontage', 'MSZoning', 'SaleType', 'Electrical', 'Exterior1st', 'Exterior2nd', 'Functional', 'Utilities', 'KitchenQual']
     no_cols = ["PoolQC", "MiscFeature", "Alley", "Fence", "MasVnrType", "FireplaceQu", 
                "GarageQual", "GarageCond", "GarageFinish", "GarageType", "BsmtExposure", 
                "BsmtCond", "BsmtQual", "BsmtFinType1", "BsmtFinType2"]
@@ -75,17 +69,6 @@ def handle_missing(dataset, add_was_missing_columns = True):
         dataset[col] = dataset[col].fillna(dataset[col].mode()[0])
     
     dataset.loc[dataset.GarageYrBlt.isnull(),'GarageYrBlt'] = dataset.loc[dataset.GarageYrBlt.isnull(),'YearBuilt']
-    
-    df_frontage = pd.get_dummies(dataset)
-    lf_train = df_frontage.dropna()
-    lf_train_y = lf_train.LotFrontage
-    lf_train_X = lf_train.drop('LotFrontage',axis=1)
-    lr = Ridge()
-    lr.fit(lf_train_X, lf_train_y)
-    nan_frontage = dataset.LotFrontage.isnull()
-    X = df_frontage[nan_frontage].drop('LotFrontage',axis=1)
-    y = lr.predict(X)
-    dataset.loc[nan_frontage,'LotFrontage'] = y
                
     return cols_added
 
@@ -104,13 +87,20 @@ def encode(dataset):
     basement_scale = {"No" : 0, "Unf" : 1, "LwQ": 2, "Rec" : 3, "BLQ" : 4, "ALQ" : 5, "GLQ" : 6}
     access_scale = {"No" : 0, "Grvl" : 1, "Pave" : 2}
     exposure_scale = {"No" : 0, "Mn" : 1, "Av": 2, "Gd" : 3}
-    functional_scale = {"Sal" : 1, "Sev" : 2, "Maj2" : 3, "Maj1" : 4, "Mod": 5, "Min2" : 6, "Min1" : 7, "Typ" : 8}
+    #functional_scale = {"Sal" : 1, "Sev" : 2, "Maj2" : 3, "Maj1" : 4, "Mod": 5, "Min2" : 6, "Min1" : 7, "Typ" : 8}
     slope_scale = {"Sev" : 1, "Mod" : 2, "Gtl" : 3}
     shape_scale = {"IR3" : 1, "IR2" : 2, "IR1" : 3, "Reg" : 4}
     paved_scale = {"N" : 0, "P" : 1, "Y" : 2}
     utilities_scale = {"ELO" : 1, "NoSeWa" : 2, "NoSewr" : 3, "AllPub" : 4}
     
-    replace_table = {"Alley" : access_scale,
+#    subclass_scale = {'180':1, '30':2, '45':2, 
+#                                        '190':3, '50':3, '90':3, 
+#                                        '85':4, '40':4, '160':4, 
+#                                        '70':5, '20':5, '75':5, '80':5, '150':5,
+#                                        '120': 6, '60':6}
+    
+    replace_table = {#"MSSubClass": subclass_scale,
+                     "Alley" : access_scale,
                        "BsmtCond" : quality_scale,
                        "BsmtExposure" : exposure_scale,
                        "BsmtFinType1" : basement_scale,
@@ -119,7 +109,7 @@ def encode(dataset):
                        "ExterCond" : quality_scale,
                        "ExterQual" : quality_scale,
                        "FireplaceQu" : quality_scale,
-                       "Functional" : functional_scale,
+                       #"Functional" : functional_scale,
                        "GarageCond" : quality_scale,
                        "GarageQual" : quality_scale,
                        "HeatingQC" : quality_scale,
@@ -242,36 +232,12 @@ def simplify_features(dataset):
 def polinomial_features(dataset):
     cols = set(dataset.columns)
     
-    dataset["OverallQual-s2"] = dataset["OverallQual"] ** 2
-    dataset["OverallQual-s3"] = dataset["OverallQual"] ** 3
-    dataset["OverallQual-Sq"] = np.sqrt(dataset["OverallQual"])
-    dataset["AllSF-2"] = dataset["AllSF"] ** 2
-    dataset["AllSF-3"] = dataset["AllSF"] ** 3
-    dataset["AllSF-Sq"] = np.sqrt(dataset["AllSF"])
-    dataset["AllFlrsSF-2"] = dataset["AllFlrsSF"] ** 2
-    dataset["AllFlrsSF-3"] = dataset["AllFlrsSF"] ** 3
-    dataset["AllFlrsSF-Sq"] = np.sqrt(dataset["AllFlrsSF"])
-    dataset["GrLivArea-2"] = dataset["GrLivArea"] ** 2
-    dataset["GrLivArea-3"] = dataset["GrLivArea"] ** 3
-    dataset["GrLivArea-Sq"] = np.sqrt(dataset["GrLivArea"])
-    dataset["Shrunk_OverallQual-s2"] = dataset["Shrunk_OverallQual"] ** 2
-    dataset["Shrunk_OverallQual-s3"] = dataset["Shrunk_OverallQual"] ** 3
-    dataset["Shrunk_OverallQual-Sq"] = np.sqrt(dataset["Shrunk_OverallQual"])
-    dataset["ExterQual-2"] = dataset["ExterQual"] ** 2
-    dataset["ExterQual-3"] = dataset["ExterQual"] ** 3
-    dataset["ExterQual-Sq"] = np.sqrt(dataset["ExterQual"])
-    dataset["GarageCars-2"] = dataset["GarageCars"] ** 2
-    dataset["GarageCars-3"] = dataset["GarageCars"] ** 3
-    dataset["GarageCars-Sq"] = np.sqrt(dataset["GarageCars"])
-    dataset["TotalBath-2"] = dataset["TotalBath"] ** 2
-    dataset["TotalBath-3"] = dataset["TotalBath"] ** 3
-    dataset["TotalBath-Sq"] = np.sqrt(dataset["TotalBath"])
-    dataset["KitchenQual-2"] = dataset["KitchenQual"] ** 2
-    dataset["KitchenQual-3"] = dataset["KitchenQual"] ** 3
-    dataset["KitchenQual-Sq"] = np.sqrt(dataset["KitchenQual"])
-    dataset["GarageScore-2"] = dataset["GarageScore"] ** 2
-    dataset["GarageScore-3"] = dataset["GarageScore"] ** 3
-    dataset["GarageScore-Sq"] = np.sqrt(dataset["GarageScore"])
+    polinomial_cols = ["OverallQual", "AllSF", "AllFlrsSF", "GrLivArea", "Shrunk_OverallQual",
+            "ExterQual", "GarageCars", "TotalBath", "KitchenQual", "GarageScore"]
+    for col in polinomial_cols:
+        dataset[col+'-2'] = dataset.loc[:,col]**2
+        dataset[col+'-3'] = dataset.loc[:,col]**3
+        dataset[col+'-sqrt'] = np.sqrt(np.absolute(dataset.loc[:,col]))
     
     return list(set(dataset.columns) - cols)
     
@@ -286,3 +252,30 @@ def log_transform(dataset, cols, threshold =0.75):
     print(str(skewness.shape[0]) + " skewed numerical features to log transform")
     skewed_features = skewness.index
     dataset[skewed_features] = np.log1p(dataset[skewed_features])
+    
+def more_features(dataset):
+    cols = set(dataset.columns)
+    dataset["IsRegularLotShape"] = (dataset["LotShape"] == "Reg") * 1
+    # Most properties are level; bin the other possibilities together
+    # as "not level".
+    dataset["IsLandLevel"] = (dataset["LandContour"] == "Lvl") * 1
+    # Most land slopes are gentle; treat the others as "not gentle".
+    dataset["IsLandSlopeGentle"] = (dataset["LandSlope"] == "Gtl") * 1
+    # Most properties use standard circuit breakers.
+    dataset["IsElectricalSBrkr"] = (dataset["Electrical"] == "SBrkr") * 1
+    # About 2/3rd have an attached garage.
+    dataset["IsGarageDetached"] = (dataset["GarageType"] == "Detchd") * 1
+    # Most have a paved drive. Treat dirt/gravel and partial pavement
+    # as "not paved".
+    dataset["IsPavedDrive"] = (dataset["PavedDrive"] == "Y") * 1
+    # The only interesting "misc. feature" is the presence of a shed.
+    dataset["HasShed"] = (dataset["MiscFeature"] == "Shed") * 1.
+           
+    dataset["Remodeled"] = (dataset["YearRemodAdd"] != dataset["YearBuilt"]) * 1
+    
+    # Did a remodeling happen in the year the house was sold?
+    dataset["RecentRemodel"] = (dataset["YearRemodAdd"] == dataset["YrSold"]) * 1
+    
+    # Was this house sold in the year it was built?
+    dataset["VeryNewHouse"] = (dataset["YearBuilt"] == dataset["YrSold"]) * 1
+    return list(set(dataset.columns) - cols)

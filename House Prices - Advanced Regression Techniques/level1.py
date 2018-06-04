@@ -1,4 +1,3 @@
-import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 
@@ -7,7 +6,8 @@ train = pd.read_csv('input/train.csv')
 
 # pull data into target (y) and predictors (X)
 train_y = train.SalePrice
-predictor_cols = ['LotArea', 'OverallQual', 'YearBuilt', 'TotRmsAbvGrd']
+#predictor_cols = ['LotArea', 'OverallQual', 'YearBuilt', 'TotRmsAbvGrd']
+predictor_cols = train.select_dtypes(exclude=['object'])
 
 # Create training predictors data
 train_X = train[predictor_cols]
@@ -26,4 +26,4 @@ print(predicted_prices)
 
 my_submission = pd.DataFrame({'Id': test.Id, 'SalePrice': predicted_prices})
 # you could use any filename. We choose submission here
-my_submission.to_csv('submission.csv', index=False)
+my_submission.to_csv('submission2.csv', index=False)
