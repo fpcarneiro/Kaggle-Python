@@ -260,6 +260,7 @@ def log_transform(dataset, cols, threshold =0.75):
     print(str(skewness.shape[0]) + " skewed numerical features to log transform")
     skewed_features = skewness.index
     dataset[skewed_features] = np.log1p(dataset[skewed_features])
+    return list((dataset[skewed_features]).columns)
     
 def more_features(dataset):
     cols = set(dataset.columns)
@@ -311,3 +312,41 @@ def have_stuff_features(dataset):
     dataset.loc[dataset["ScreenPorch"] != 0,"HasScreenPorch"] = 1
     
     return list(set(dataset.columns) - cols)
+
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+def get_processed_datasets():
+    train, test = read_train_test()
+
+    train = drop_outliers(train)
+    
+    all_data = (concat_train_test(train.drop(['SalePrice'], axis=1), test)).drop(['Id'], axis=1)
+    
+    convert_numeric2category(all_data)
+    was_missing_columns = handle_missing(all_data, False)
+    
+    even_more_features = more_features(all_data)
+    all_data = encode(all_data)
+    shrunk_columns = shrink_scales(all_data, "Shrunk_")
+    engineered_columns = add_engineered_features(all_data)
+    
+    simplified_columns = simplify_features(all_data)
+    polinomial_columns = polinomial_features(all_data)
+    
+    num_columns, cat_columns = get_feature_groups(all_data, drop_list = ['dataset'])
+    
+    print("Numerical features : " + str(len(num_columns)))
+    print("Categorical features : " + str(len(cat_columns)))
+    
+    engineered_columns = list(set(engineered_columns) - set(cat_columns))
+    
+    have_features = have_stuff_features(all_data)
+    
+    all_data_encoded = hot_encode(all_data, drop_list = ['dataset'])
+    
+    skewed_features = log_transform(all_data_encoded, list(set(num_columns)-set(was_missing_columns)), 0.5)
+    
+    train_y = np.log1p(train.SalePrice)
+    train_X = (all_data_encoded.loc[all_data_encoded.dataset == "train"]).drop(['dataset'], axis=1)
+    test_X = (all_data_encoded.loc[all_data_encoded.dataset == "test"]).drop(['dataset'], axis=1)
+    
+    return (train_X, train_y, test_X)
