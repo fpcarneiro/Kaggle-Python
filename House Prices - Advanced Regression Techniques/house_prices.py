@@ -17,40 +17,7 @@ def ignore_warn(*args, **kwargs):
     pass
 warnings.warn = ignore_warn #ignore annoying warning (from sklearn and seaborn)
 
-train, test = pp.read_train_test()
-
-train = pp.drop_outliers(train)
-
-all_data = pp.concat_train_test(train.drop(['SalePrice'], axis=1), test)
-
-#ds = ds.drop(['Utilities'], axis=1)
-#ds = ds.drop(high_occurance_missing(ds, 0.8), axis=1)
-
-pp.convert_numeric2category(all_data)
-was_missing_columns = pp.handle_missing(all_data, False)
-
-#more_features = pp.more_features(all_data)
-
-all_data = pp.encode(all_data)
-shrunk_columns = pp.shrink_scales(all_data)
-engineered_columns = pp.add_engineered_features(all_data)
-simplified_columns = pp.simplify_features(all_data)
-polinomial_columns = pp.polinomial_features(all_data)
-
-num_columns, cat_columns = pp.get_feature_groups(all_data)
-
-print("Numerical features : " + str(len(num_columns)))
-print("Categorical features : " + str(len(cat_columns)))
-
-engineered_columns = list(set(engineered_columns) - set(cat_columns))
-
-all_data_encoded = pp.hot_encode(all_data)
-
-pp.log_transform(all_data_encoded, list(set(num_columns)-set(was_missing_columns)), 0.5)
-
-train_y = np.log1p(train.SalePrice)
-train_X = (all_data_encoded.loc[all_data_encoded.dataset == "train"]).drop(['dataset', 'Id'], axis=1)
-test_X = (all_data_encoded.loc[all_data_encoded.dataset == "test"]).drop(['dataset', 'Id'], axis=1)
+train_X, train_y, test_X = pp.get_processed_datasets()
 
 #########################################################################################################
 all_predictors = train_X.columns
@@ -128,8 +95,8 @@ models.append(("GBoost", model_GBoost))
 models.append(("lgb", model_lgb))
 models.append(("lasso_lars", model_lasso_lars))
 models.append(("lsvr", model_lsvr))
-models.append(("sgd", model_sgd))
-models.append(("extra", model_extra))
+#models.append(("sgd", model_sgd))
+#models.append(("extra", model_extra))
 
 scores = []
 names = []
@@ -143,7 +110,7 @@ print(tab)
 for name, model in models:
     model.fit(train_X_reduced, train_y)
     
-averaged_models = em.AveragingModels(models = [model_svr, model_byr, model_KRR])
+averaged_models = em.AveragingModels(models = [model_byr, model_ENet, model_KRR])
 
 score_avg = np.sqrt(pp.score_model(averaged_models, train_X_reduced, train_y))
 print(" Averaged base models score: {:.6f} ({:.6f})\n".format(score_avg.mean(), score_avg.std()))
@@ -154,7 +121,7 @@ print(predicted_prices_averaged)
 my_submission = pd.DataFrame({'Id': test.Id, 'SalePrice': predicted_prices_averaged})
 my_submission.to_csv('submission_avg.csv', index=False)
 
-stacked_averaged_models = em.StackingAveragedModels(base_models = [model_svr, model_byr, model_ridge],
+stacked_averaged_models = em.StackingAveragedModels(base_models = [model_byr, model_ENet, model_lasso],
                                                  meta_model = model_KRR)
 
 score_stacked_averaged = np.sqrt(pp.score_model(stacked_averaged_models, train_X_reduced, train_y))
@@ -177,4 +144,7 @@ predicted_prices = predicted_prices_stacked_averaged*0.7 + predicted_prices_xgbo
 
 my_submission = pd.DataFrame({'Id': test.Id, 'SalePrice': predicted_prices})
 my_submission.to_csv('submission_ensemble.csv', index=False)
+
+
+
 
