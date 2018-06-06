@@ -2,8 +2,22 @@ import pandas as pd
 import numpy as np
 from scipy.stats import skew
 from sklearn.model_selection import KFold, cross_val_score
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 DATADIR = "input/"
+
+quality_scale = {"No" : 0, "Po" : 1, "Fa" : 2, "TA" : 3, "Gd" : 4, "Ex" : 5}
+basement_scale = {"No" : 0, "Unf" : 1, "LwQ": 2, "Rec" : 3, "BLQ" : 4, "ALQ" : 5, "GLQ" : 6}
+access_scale = {"No" : 0, "Grvl" : 1, "Pave" : 2}
+exposure_scale = {"No" : 0, "Mn" : 1, "Av": 2, "Gd" : 3}
+functional_scale = {"Sal" : 1, "Sev" : 2, "Maj2" : 3, "Maj1" : 4, "Mod": 5, "Min2" : 6, "Min1" : 7, "Typ" : 8}
+slope_scale = {"Sev" : 1, "Mod" : 2, "Gtl" : 3}
+shape_scale = {"IR3" : 1, "IR2" : 2, "IR1" : 3, "Reg" : 4}
+paved_scale = {"N" : 0, "P" : 1, "Y" : 2}
+utilities_scale = {"ELO" : 1, "NoSeWa" : 2, "NoSewr" : 3, "AllPub" : 4}
+air_scale = {"N" : 0, "Y" : 1}
+finished_scale = {"No" : 0, "Unf" : 1, "RFn" : 2, "Fin" : 3}
 
 def read_train_test(train_file = 'train.csv', test_file = 'test.csv'):
     train = pd.read_csv(DATADIR + train_file)
@@ -20,7 +34,7 @@ def concat_train_test(train, test, ignore_index=False):
     return dataset
 
 def convert_numeric2category(dataset):
-    NumStr = ["MSSubClass","MoSold"]
+    NumStr = ["MSSubClass", "MoSold"]
     
     for col in NumStr:
         dataset[col]=dataset[col].astype(str)
@@ -52,15 +66,23 @@ def handle_missing(dataset, add_was_missing_columns = True):
     if add_was_missing_columns :
         cols_added = add_columns_was_missing(dataset)
     
-    cols_mode = ['LotFrontage', 'MSZoning', 'SaleType', 'Electrical', 'Exterior1st', 'Exterior2nd', 'Functional', 'Utilities', 'KitchenQual']
-    no_cols = ["PoolQC", "MiscFeature", "Alley", "Fence", "MasVnrType", "FireplaceQu", 
-               "GarageQual", "GarageCond", "GarageFinish", "GarageType", "BsmtExposure", 
-               "BsmtCond", "BsmtQual", "BsmtFinType1", "BsmtFinType2"]
+    mode_numcols = ['LotFrontage']
+    
+    no_catcols = ["Alley", "BsmtCond", "BsmtExposure", "BsmtFinType1", 
+                  "BsmtFinType2", "BsmtQual", "Fence", "FireplaceQu", 
+                  "GarageCond", "GarageFinish", "GarageQual", "GarageType", 
+                  "MasVnrType", "MiscFeature", "PoolQC"]
+    
+    mode_catcols = ['Electrical', 'Exterior1st', 'Exterior2nd', 'Functional', 'KitchenQual', 'MSZoning',
+                    'SaleType', 'Utilities']
+    
     zero_cols = ["MasVnrArea", "BsmtFullBath", "BsmtHalfBath", "BsmtFinSF1", "BsmtFinSF2", "BsmtUnfSF", "TotalBsmtSF",
                  "GarageArea", "GarageCars"]
     
+    cols_mode = mode_numcols + mode_catcols
+    
     missing_dict = dict(zip(zero_cols,[0] * len(zero_cols)))
-    missing_dict.update(dict(zip(no_cols,["No"] * len(no_cols))))
+    missing_dict.update(dict(zip(no_catcols,["No"] * len(no_catcols))))
     
     for (k, v) in missing_dict.items():
         dataset.loc[:, k] = dataset.loc[:, k].fillna(v)
@@ -82,49 +104,25 @@ def add_columns_was_missing(dataset):
         dataset[new_col] = dataset[col].isnull()
     return new_columns
 
-def encode(dataset):
-    quality_scale = {"No" : 0, "Po" : 1, "Fa" : 2, "TA" : 3, "Gd" : 4, "Ex" : 5}
-    basement_scale = {"No" : 0, "Unf" : 1, "LwQ": 2, "Rec" : 3, "BLQ" : 4, "ALQ" : 5, "GLQ" : 6}
-    access_scale = {"No" : 0, "Grvl" : 1, "Pave" : 2}
-    exposure_scale = {"No" : 0, "Mn" : 1, "Av": 2, "Gd" : 3}
-    #functional_scale = {"Sal" : 1, "Sev" : 2, "Maj2" : 3, "Maj1" : 4, "Mod": 5, "Min2" : 6, "Min1" : 7, "Typ" : 8}
-    slope_scale = {"Sev" : 1, "Mod" : 2, "Gtl" : 3}
-    shape_scale = {"IR3" : 1, "IR2" : 2, "IR1" : 3, "Reg" : 4}
-    paved_scale = {"N" : 0, "P" : 1, "Y" : 2}
-    utilities_scale = {"ELO" : 1, "NoSeWa" : 2, "NoSewr" : 3, "AllPub" : 4}
-    
-#    subclass_scale = {'180':1, '30':2, '45':2, 
-#                                        '190':3, '50':3, '90':3, 
-#                                        '85':4, '40':4, '160':4, 
-#                                        '70':5, '20':5, '75':5, '80':5, '150':5,
-#                                        '120': 6, '60':6}
-    
-    replace_table = {#"MSSubClass": subclass_scale,
-                     "Alley" : access_scale,
-                       "BsmtCond" : quality_scale,
-                       "BsmtExposure" : exposure_scale,
-                       "BsmtFinType1" : basement_scale,
-                       "BsmtFinType2" : basement_scale,
-                       "BsmtQual" : quality_scale,
-                       "ExterCond" : quality_scale,
-                       "ExterQual" : quality_scale,
-                       "FireplaceQu" : quality_scale,
-                       #"Functional" : functional_scale,
-                       "GarageCond" : quality_scale,
-                       "GarageQual" : quality_scale,
-                       "HeatingQC" : quality_scale,
-                       "KitchenQual" : quality_scale,
-                       "LandSlope" : slope_scale,
-                       "LotShape" : shape_scale,
-                       "PavedDrive" : paved_scale,
-                       "PoolQC" : quality_scale,
-                       "Street" : access_scale,
-                       "Utilities" : utilities_scale}
-# Encode some categorical features as ordered numbers when there is information in the order
+def encode_features(dataset, features, scales):
+    replace_table = dict(zip(features, scales))
     mydata = dataset.replace(to_replace = replace_table)
     return (mydata)
 
-def shrink_scales(dataset):
+def encode(dataset):
+    cols = ["Alley", "BsmtCond", "BsmtExposure", "BsmtFinType1", "BsmtFinType2", "BsmtQual", "ExterCond",
+            "ExterQual", "FireplaceQu", "Functional", "GarageCond", "GarageQual", "GarageFinish",
+            "HeatingQC", "KitchenQual", "LandSlope", "LotShape", "PavedDrive", "PoolQC", "Street",
+            "Utilities", "CentralAir"]
+    scales = [access_scale, quality_scale, exposure_scale, basement_scale, basement_scale, quality_scale, 
+              quality_scale, quality_scale, quality_scale, functional_scale, quality_scale, quality_scale,
+              finished_scale, quality_scale, quality_scale, slope_scale, shape_scale, paved_scale, quality_scale,
+              access_scale, utilities_scale, air_scale]
+
+    mydata = encode_features(dataset, cols, scales)
+    return (mydata)
+
+def shrink_scales(dataset, prefix = ""):
     cols = set(dataset.columns)
     # Create new features
     overall_scale = {1 : 1, 2 : 1, 3 : 1, # bad
@@ -162,7 +160,7 @@ def shrink_scales(dataset):
     
     new_cols = []
     for (k,v) in simpl_dict.items():
-        new_col = "Shrunk_"+ k
+        new_col = prefix + k
         new_cols.append(new_col)
         dataset[new_col] = dataset[k].replace(v)
     
@@ -185,21 +183,17 @@ def add_engineered_features(dataset):
 #    # Overall pool score
     dataset["PoolScore"] = dataset["PoolArea"] * dataset["PoolQC"]
 #    # Total number of bathrooms
-    dataset["TotalBath"] = dataset["BsmtFullBath"] + (0.5 * dataset["BsmtHalfBath"]) + \
-    dataset["FullBath"] + (0.5 * dataset["HalfBath"])
+    dataset["TotalBath"] = dataset["BsmtFullBath"] + (0.5 * dataset["BsmtHalfBath"]) + dataset["FullBath"] + (0.5 * dataset["HalfBath"])
 #    # Total SF for house (incl. basement)
     dataset["AllSF"] = dataset["GrLivArea"] + dataset["TotalBsmtSF"]
 #    # Total SF for 1st + 2nd floors
     dataset["AllFlrsSF"] = dataset["1stFlrSF"] + dataset["2ndFlrSF"]
 #    # Total SF for porch
-    dataset["AllPorchSF"] = dataset["OpenPorchSF"] + dataset["EnclosedPorch"] + \
-    dataset["3SsnPorch"] + dataset["ScreenPorch"]
+    dataset["AllPorchSF"] = dataset["OpenPorchSF"] + dataset["EnclosedPorch"] + dataset["3SsnPorch"] + dataset["ScreenPorch"]
 ## Has masonry veneer or not
-    dataset["HasMasVnr"] = dataset.MasVnrType.replace({"BrkCmn" : 1, "BrkFace" : 1, "CBlock" : 1, 
-                                               "Stone" : 1, "None" : 0})
+    dataset["HasMasVnr"] = dataset.MasVnrType.replace({"BrkCmn" : 1, "BrkFace" : 1, "CBlock" : 1, "Stone" : 1, "None" : 0})
 #    # House completed before sale or not
-    dataset["BoughtOffPlan"] = dataset.SaleCondition.replace({"Abnorml" : 0, "Alloca" : 0, "AdjLand" : 0, 
-                                                      "Family" : 0, "Normal" : 0, "Partial" : 1})
+    dataset["BoughtOffPlan"] = dataset.SaleCondition.replace({"Abnorml" : 0, "Alloca" : 0, "AdjLand" : 0, "Family" : 0, "Normal" : 0, "Partial" : 1})
     
     dataset['TotalSF'] = dataset['TotalBsmtSF'] + dataset['1stFlrSF'] + dataset['2ndFlrSF']
     
@@ -212,6 +206,21 @@ def add_engineered_features(dataset):
 
     return list(set(dataset.columns) - cols)
 #obj_df["num_cylinders"].value_counts()
+
+def correlation_target(dataset, target = "SalePrice"):
+    corr = dataset.corr()
+    corr.sort_values([target], ascending = False, inplace = True)
+    return(corr.SalePrice)
+    
+def correlation_matrix(dataset, target = 'SalePrice', nvar = 10):
+    corrmat = dataset.corr()
+    cols = corrmat.nlargest(nvar + 1, target)[target].index
+    cm = np.corrcoef(dataset[cols].values.T)
+    sns.set(font_scale=1.25)
+    sns.heatmap(cm, cbar=True, annot=True, square=True, fmt='.2f', 
+                     annot_kws={'size': 10}, yticklabels=cols.values, xticklabels=cols.values)
+    plt.show()
+    return list(cols[1:])
 
 def simplify_features(dataset):
     cols = set(dataset.columns)
@@ -229,11 +238,10 @@ def simplify_features(dataset):
     dataset["SimplKitchenScore"] = dataset["KitchenAbvGr"] * dataset["Shrunk_KitchenQual"]
     return list(set(dataset.columns) - cols)
     
-def polinomial_features(dataset):
+def polinomial_features(dataset, polinomial_cols = ["OverallQual", "AllSF", "AllFlrsSF", "GrLivArea", "Shrunk_OverallQual",
+            "ExterQual", "GarageCars", "TotalBath", "KitchenQual", "GarageScore"]):
     cols = set(dataset.columns)
     
-    polinomial_cols = ["OverallQual", "AllSF", "AllFlrsSF", "GrLivArea", "Shrunk_OverallQual",
-            "ExterQual", "GarageCars", "TotalBath", "KitchenQual", "GarageScore"]
     for col in polinomial_cols:
         dataset[col+'-2'] = dataset.loc[:,col]**2
         dataset[col+'-3'] = dataset.loc[:,col]**3
@@ -269,7 +277,7 @@ def more_features(dataset):
     # as "not paved".
     dataset["IsPavedDrive"] = (dataset["PavedDrive"] == "Y") * 1
     # The only interesting "misc. feature" is the presence of a shed.
-    dataset["HasShed"] = (dataset["MiscFeature"] == "Shed") * 1.
+    #dataset["HasShed"] = (dataset["MiscFeature"] == "Shed") * 1.
            
     dataset["Remodeled"] = (dataset["YearRemodAdd"] != dataset["YearBuilt"]) * 1
     
@@ -278,4 +286,28 @@ def more_features(dataset):
     
     # Was this house sold in the year it was built?
     dataset["VeryNewHouse"] = (dataset["YearBuilt"] == dataset["YrSold"]) * 1
+    return list(set(dataset.columns) - cols)
+
+def have_stuff_features(dataset):
+    cols = set(dataset.columns)
+    dataset['HasBsmt'] = 0 
+    dataset["HasShed"] = 0
+    dataset["Has2ndFloor"] = 0
+    dataset["HasMasVnr"] = 0
+    dataset["HasWoodDeck"] = 0
+    dataset["HasOpenPorch"] = 0
+    dataset["HasEnclosedPorch"] = 0
+    dataset["Has3SsnPorch"] = 0
+    dataset["HasScreenPorch"] = 0
+    
+    dataset.loc[dataset['TotalBsmtSF'] != 0,'HasBsmt'] = 1
+    dataset.loc[dataset["MiscFeature"] == "Shed","HasShed"] = 1
+    dataset.loc[dataset["2ndFlrSF"] != 0,"Has2ndFloor"] = 1
+    dataset.loc[dataset["MasVnrArea"] != 0,"HasMasVnr"] = 1
+    dataset.loc[dataset["WoodDeckSF"] != 0,"HasWoodDeck"] = 1
+    dataset.loc[dataset["OpenPorchSF"] != 0,"HasOpenPorch"] = 1
+    dataset.loc[dataset["EnclosedPorch"] != 0,"HasEnclosedPorch"] = 1
+    dataset.loc[dataset["3SsnPorch"] != 0,"Has3SsnPorch"] = 1
+    dataset.loc[dataset["ScreenPorch"] != 0,"HasScreenPorch"] = 1
+    
     return list(set(dataset.columns) - cols)
