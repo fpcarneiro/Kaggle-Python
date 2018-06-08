@@ -248,7 +248,7 @@ def polinomial_features(dataset, polinomial_cols = ["OverallQual", "AllSF", "All
         dataset[col+'-sqrt'] = np.sqrt(np.absolute(dataset.loc[:,col]))
     
     return list(set(dataset.columns) - cols)
-    
+
 def score_model(estimator, X, y, n_folds = 5, scoring_func="neg_mean_squared_error"):
     kf = KFold(n_folds, shuffle=True, random_state=42).get_n_splits(X)
     score = -cross_val_score(estimator, X, y, scoring=scoring_func, cv = kf)
@@ -325,10 +325,11 @@ def get_processed_datasets():
     was_missing_columns = handle_missing(all_data, False)
     
     even_more_features = more_features(all_data)
+    
     all_data = encode(all_data)
     shrunk_columns = shrink_scales(all_data, "Shrunk_")
-    engineered_columns = add_engineered_features(all_data)
     
+    engineered_columns = add_engineered_features(all_data)
     simplified_columns = simplify_features(all_data)
     polinomial_columns = polinomial_features(all_data)
     
@@ -345,8 +346,8 @@ def get_processed_datasets():
     
     skewed_features = log_transform(all_data_encoded, list(set(num_columns)-set(was_missing_columns)), 0.5)
     
-    train_y = np.log1p(train.SalePrice)
+    train_y = pd.Series(list(np.log1p(train.SalePrice)))
     train_X = (all_data_encoded.loc[all_data_encoded.dataset == "train"]).drop(['dataset'], axis=1)
     test_X = (all_data_encoded.loc[all_data_encoded.dataset == "test"]).drop(['dataset'], axis=1)
     
-    return (train_X, train_y, test_X)
+    return (train_X, train_y, test_X, list(test.Id))

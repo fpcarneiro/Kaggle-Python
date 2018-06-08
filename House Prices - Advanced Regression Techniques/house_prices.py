@@ -1,14 +1,13 @@
 import preprocessing as pp
 import ensemble as em
-import cv_lab as cvl
+import feature_selection as fs
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import RobustScaler
-from sklearn.feature_selection import SelectFromModel
 from sklearn.kernel_ridge import KernelRidge
 from xgboost import XGBRegressor
 import lightgbm as lgb
-from sklearn.svm import SVR, LinearSVR, LinearSVC
+from sklearn.svm import SVR, LinearSVR
 from sklearn.linear_model import ElasticNet, Lasso, BayesianRidge, Ridge, SGDRegressor, LassoLars
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, ExtraTreesRegressor
 
@@ -17,35 +16,21 @@ def ignore_warn(*args, **kwargs):
     pass
 warnings.warn = ignore_warn #ignore annoying warning (from sklearn and seaborn)
 
-train_X, train_y, test_X = pp.get_processed_datasets()
+train_X, train_y, test_X, ids = pp.get_processed_datasets()
 
-#########################################################################################################
-all_predictors = train_X.columns
-predictors = list(set(train_X.columns) - set(was_missing_columns))
+features_variance = fs.list_features_low_variance(train_X, train_y)
 
-import matplotlib.pyplot as plt
-import seaborn as sns
-import warnings
-plt.style.use('ggplot')
-lasso = Lasso(alpha=0.000507)
-lasso.fit(train_X, train_y)
-FI_lasso = pd.DataFrame({"Feature Importance":lasso.coef_}, index=train_X.columns)
-FI_lasso.sort_values("Feature Importance",ascending=False)
-FI_lasso[FI_lasso["Feature Importance"]!=0].sort_values("Feature Importance").plot(kind="barh",figsize=(15,25))
-plt.xticks(rotation=90)
-plt.show()
+train_X = train_X[features_variance]
+test_X = test_X[features_variance]
 
-scaler = RobustScaler()
-train_X = scaler.fit(train_X[predictors]).transform(train_X[predictors])
-test_X = scaler.transform(test_X[predictors])
-train_y = train_y.as_matrix()
+importances = fs.get_feature_importance(Lasso(alpha=0.000507), train_X, train_y)
+#fs.plot_features_importances(importances, show_importance_zero = False)
 
-sfm = SelectFromModel(Lasso(alpha = 0.000507))
-#sfm = SelectFromModel(BayesianRidge())
+features_select_from_model, pipe_select_from_model = fs.remove_features_from_model(estimator = Lasso(alpha = 0.000507), 
+                                                          scaler = RobustScaler(), X = train_X, y = train_y)
+train_X_reduced = pipe_select_from_model.transform(train_X)
+test_X_reduced = pipe_select_from_model.transform(test_X)
 
-sfm.fit(train_X, train_y)
-train_X_reduced = sfm.transform(train_X)
-test_X_reduced = sfm.transform(test_X)
 #########################################################################################################
 
 model_lasso = Lasso(alpha = 0.000507, random_state = 1)
@@ -106,11 +91,8 @@ for name, model in models:
 tab = pd.DataFrame({ "Model" : names, "Score" : scores })
 tab = tab.sort_values(by=['Score'], ascending = True)
 print(tab)
-
-for name, model in models:
-    model.fit(train_X_reduced, train_y)
     
-averaged_models = em.AveragingModels(models = [model_byr, model_ENet, model_KRR])
+averaged_models = em.AveragingModels(models = [model_svr, model_KRR, model_ridge])
 
 score_avg = np.sqrt(pp.score_model(averaged_models, train_X_reduced, train_y))
 print(" Averaged base models score: {:.6f} ({:.6f})\n".format(score_avg.mean(), score_avg.std()))
@@ -118,11 +100,11 @@ print(" Averaged base models score: {:.6f} ({:.6f})\n".format(score_avg.mean(), 
 averaged_models.fit(train_X_reduced, train_y)
 predicted_prices_averaged = np.expm1(averaged_models.predict(test_X_reduced))
 print(predicted_prices_averaged)
-my_submission = pd.DataFrame({'Id': test.Id, 'SalePrice': predicted_prices_averaged})
+my_submission = pd.DataFrame({'Id': ids, 'SalePrice': predicted_prices_averaged})
 my_submission.to_csv('submission_avg.csv', index=False)
 
-stacked_averaged_models = em.StackingAveragedModels(base_models = [model_byr, model_ENet, model_lasso],
-                                                 meta_model = model_KRR)
+stacked_averaged_models = em.StackingAveragedModels(base_models = [model_byr, model_KRR, model_ridge],
+                                                 meta_model = model_svr)
 
 score_stacked_averaged = np.sqrt(pp.score_model(stacked_averaged_models, train_X_reduced, train_y))
 print(" Stacked Averaged base models score: {:.6f} ({:.6f})\n".format(score_stacked_averaged.mean(), 
@@ -142,7 +124,7 @@ print(predicted_prices_lgb)
 
 predicted_prices = predicted_prices_stacked_averaged*0.7 + predicted_prices_xgboost*0.2 + predicted_prices_lgb*0.1
 
-my_submission = pd.DataFrame({'Id': test.Id, 'SalePrice': predicted_prices})
+my_submission = pd.DataFrame({'Id': ids, 'SalePrice': predicted_prices})
 my_submission.to_csv('submission_ensemble.csv', index=False)
 
 

@@ -1,34 +1,31 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import make_scorer, mean_squared_error
 
-class HousePricesGrid():
-    def __init__(self, model, hyperparameters, n_folds = 5, random = True, random_iter = 10):
+def score_sq(y, y_pred):
+    return(np.sqrt(mean_squared_error(y, y_pred)))
+
+class HousePricesGridCV():
+    def __init__(self, model, hyperparameters, n_folds = 5):
         self.model = model
         self.hyperparameter = hyperparameters
         self.folds = n_folds
-        self.random = random
-        self.random_iter = random_iter
-        if self.random:
-            self.grid_search = RandomizedSearchCV(self.model, self.hyperparameter,
+        self.grid_search = GridSearchCV(self.model, self.hyperparameter,
                                    cv=self.folds, 
-                                   scoring = "neg_mean_squared_error",
-                                   n_iter = self.random_iter)
-        else:
-            self.grid_search = GridSearchCV(self.model, self.hyperparameter,
-                                   cv=self.folds, 
-                                   scoring="neg_mean_squared_error")
+                                   scoring=make_scorer(score_sq, greater_is_better = False))
     
     def fit(self, X, y):
         self.grid_search.fit(X, y)
-        self.grid_search.cv_results_['mean_test_score'] = np.sqrt(-(self.grid_search.cv_results_['mean_test_score']))
-        self.grid_search.cv_results_['mean_train_score'] = np.sqrt(-(self.grid_search.cv_results_['mean_train_score']))
+        self.grid_search.cv_results_['mean_test_score'] = -(self.grid_search.cv_results_['mean_test_score'])
+        self.grid_search.cv_results_['mean_train_score'] = -(self.grid_search.cv_results_['mean_train_score'])
+        self.grid_search.best_score_ = -(self.grid_search.best_score_)
         
     def get_best_results(self):
         results = self.grid_search.cv_results_
         print(self.grid_search.best_params_, self.grid_search.best_score_)
-        print(pd.DataFrame(results)[['params','mean_test_score','mean_test_score','std_test_score']])
+        print(pd.DataFrame(results)[['params','mean_test_score']])
     
     def plot_scores(self):
         results = self.grid_search.cv_results_
@@ -37,20 +34,16 @@ class HousePricesGrid():
         # Get the regular numpy array from the MaskedArray
         for parameter, param_range in dict.items(self.hyperparameter):
             
-            plt.figure(figsize=(8, 8))
-            plt.title("GridSearchCV Evaluating", fontsize=16)
+            plt.figure(figsize=(10, 5))
+            plt.title("GridSearchCV Evaluating", fontsize=15)
             X_axis = np.array(results['param_' + parameter].data, dtype=float)
             
             ax = plt.axes()
-            ax.set_xlim(min(X_axis), max(X_axis))
+            #ax.set_xlim(min(X_axis), max(X_axis))
             ax.set_ylim(0.0, 0.20)
             
             for sample, style in (('train', '--'), ('test', '-')):
-                print("")
-                print(parameter)
-                print(sample)
                 sample_score_mean = results['mean_%s_%s' % (sample, scorer)]
-                print(len(sample_score_mean))
                 sample_score_std = results['std_%s_%s' % (sample, scorer)]
                 ax.fill_between(X_axis, sample_score_mean - sample_score_std,
                         sample_score_mean + sample_score_std,

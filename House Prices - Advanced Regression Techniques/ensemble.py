@@ -37,16 +37,25 @@ class StackingAveragedModels(BaseEstimator, RegressorMixin, TransformerMixin):
    
     # We again fit the data on clones of the original models
     def fit(self, X, y):
+        print(y.shape)
+        print(X.shape)
         self.base_models_ = [list() for x in self.base_models]
         self.meta_model_ = clone(self.meta_model)
         kfold = KFold(n_splits=self.n_folds, shuffle=True, random_state=156)
         # Train cloned base models then create out-of-fold predictions
         # that are needed to train the cloned meta-model
         out_of_fold_predictions = np.zeros((X.shape[0], len(self.base_models)))
+        print(y.shape)
+        print(X.shape)
         for i, model in enumerate(self.base_models):
             for train_index, holdout_index in kfold.split(X, y):
                 instance = clone(model)
                 self.base_models_[i].append(instance)
+                print(train_index)
+                print("Y")
+                print(len(y))
+                print("X")
+                print(X[train_index])
                 instance.fit(X[train_index], y[train_index])
                 y_pred = instance.predict(X[holdout_index])
                 out_of_fold_predictions[holdout_index, i] = y_pred        
