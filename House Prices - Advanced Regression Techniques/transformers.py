@@ -1,9 +1,7 @@
 import numpy as np
+import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.preprocessing import FunctionTransformer
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import RobustScaler
-from sklearn.pipeline import make_pipeline
+from scipy.stats import skew
 
 quality_scale = {"No" : 0, "Po" : 1, "Fa" : 2, "TA" : 3, "Gd" : 4, "Ex" : 5}
 basement_scale = {"No" : 0, "Unf" : 1, "LwQ": 2, "Rec" : 3, "BLQ" : 4, "ALQ" : 5, "GLQ" : 6}
@@ -16,6 +14,11 @@ paved_scale = {"N" : 0, "P" : 1, "Y" : 2}
 utilities_scale = {"ELO" : 1, "NoSeWa" : 2, "NoSewr" : 3, "AllPub" : 4}
 air_scale = {"N" : 0, "Y" : 1}
 finished_scale = {"No" : 0, "Unf" : 1, "RFn" : 2, "Fin" : 3}
+
+def get_feature_groups(X):
+    num_columns = list(X.select_dtypes(exclude=['object']).columns)
+    cat_columns = list(X.select_dtypes(include=['object']).columns)
+    return (num_columns, cat_columns)
 
 def drop_outliers(X):
     return(X.drop(X[(X['GrLivArea']>4000) & (X['SalePrice']<300000)].index))
@@ -200,6 +203,18 @@ def have_stuff_features(X):
     
     return X
 
+def log_transform(X, cols, threshold =0.75):
+    skewness = X[cols].apply(lambda x: skew(x))
+    skewness = skewness[abs(skewness) > threshold]
+    print(str(skewness.shape[0]) + " skewed numerical features to log transform")
+    skewed_features = skewness.index
+    X[skewed_features] = np.log1p(X[skewed_features])
+    return X
+
+def hot_encode(X, columns):
+    return pd.get_dummies(X, columns = columns)
+    #return (pd.concat([X, encoded], axis=1).drop(columns, axis=1))
+
 class DropOutliersTransformer(BaseEstimator, TransformerMixin):
     def __init__(self):
         pass
@@ -273,13 +288,13 @@ class SimplifiedFeatureTransformer(BaseEstimator, TransformerMixin):
 class PolinomialFeaturesTransformer(BaseEstimator, TransformerMixin):
     def __init__(self, col = "SalePrice"):
         self.column = col
-        self.polinomial_cols = ["OverallQual", "AllSF", "AllFlrsSF", "GrLivArea", "Shrunk_OverallQual",
-            "ExterQual", "GarageCars", "TotalBath", "KitchenQual", "GarageScore"]
+        self.polinomial_cols = []
 
     def transform(self, X, y=None):
         return add_polinomial_features(X, self.polinomial_cols)
 
     def fit(self, X, y=None):
+        #features_variance = fs.list_features_low_variance(X, y)
         corr = X.corr().loc[:, self.column]
         corr = corr.sort_values(ascending = False)
         self.polinomial_cols = list(corr[1:11].index)
@@ -295,19 +310,44 @@ class HaveStuffTransformer(BaseEstimator, TransformerMixin):
     def fit(self, X, y=None):
         return self
 
-pipe = Pipeline([('convert', Numeric2CategoryTransformer(["MSSubClass", "MoSold"])),
-                 ('missing', HandleMissingTransformer()),
-                 ('more_features', MoreFeaturesTransformer()),
-                 ('encode', EncodeTransformer(prefix = "Shrunk_")),
-                 ('feature_engineering', FeatureEngineeringTransformer()),
-                 ('simplified_features', SimplifiedFeatureTransformer(prefix = "Shrunk_")),
-                 ('havestuff_features', HaveStuffTransformer()),
-                 ])
+class HotEncodeTransformer(BaseEstimator, TransformerMixin):
+    def __init__(self, columns = None):
+        self.columns = columns
 
-train = pipe.fit_transform(train)
-test = pipe.fit_transform(test)
+    def transform(self, X, y=None):
+        return hot_encode(X, self.columns)
 
-t = PolinomialFeaturesTransformer()
-t.fit(train)
-train = t.transform(train)
-test = t.transform(test)
+    def fit(self, X, y=None):
+        if self.columns == None:
+            self.columns = list(X.select_dtypes(include=['object']).columns)
+        return self
+    
+class LogTransformer(BaseEstimator, TransformerMixin):
+    def __init__(self, columns = None, threshold = 0.75):
+        self.columns = columns
+        self.threshold = threshold
+
+    def transform(self, X, y=None):
+        return log_transform(X, self.columns, threshold = self.threshold)
+
+    def fit(self, X, y=None):
+        if self.columns == None:
+            self.columns = list(X.select_dtypes(exclude=['object']).columns)
+        return self
+
+#pipe = Pipeline([('convert', Numeric2CategoryTransformer(["MSSubClass", "MoSold"])),
+#                 ('missing', HandleMissingTransformer()),
+#                 ('more_features', MoreFeaturesTransformer()),
+#                 ('encode', EncodeTransformer(prefix = "Shrunk_")),
+#                 ('feature_engineering', FeatureEngineeringTransformer()),
+#                 ('simplified_features', SimplifiedFeatureTransformer(prefix = "Shrunk_")),
+#                 ('havestuff_features', HaveStuffTransformer()),
+#                 ])
+#
+#train = pipe.fit_transform(train)
+#test = pipe.fit_transform(test)
+#
+#t = PolinomialFeaturesTransformer()
+#t.fit(train)
+#train = t.transform(train)
+#test = t.transform(test)
