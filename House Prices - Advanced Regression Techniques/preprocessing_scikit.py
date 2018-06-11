@@ -313,13 +313,29 @@ def have_stuff_features(dataset):
     
     return list(set(dataset.columns) - cols)
 
+def add_features_neighborhood(dataset):
+    aggregations = {
+            'SalePrice_Median':'median',
+            'SalePrice_Mean':'mean',
+            'SalePrice_Std':'std'
+            }
+    
+    dataset["Neighborhood_SalePrice_Median"] = dataset.groupby("Neighborhood")["SalePrice"].transform(lambda x: x.median())
+    #dataset["Neighborhood_SalePrice_Mean"] = dataset.groupby("Neighborhood")["SalePrice"].transform(lambda x: x.mean())
+    #dataset["Neighborhood_SalePrice_by_SF"] = dataset.groupby("Neighborhood")["SalePrice"].transform(lambda x: x.mean())
+    #train.groupby("Neighborhood")["SalePrice"].agg(aggregations)
+
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 def get_processed_datasets():
     train, test = read_train_test()
 
     train = drop_outliers(train)
     
-    all_data = (concat_train_test(train.drop(['SalePrice'], axis=1), test)).drop(['Id'], axis=1)
+    all_data = (concat_train_test(train, test)).drop(['Id'], axis=1)
+    
+    add_features_neighborhood(all_data)
+    
+    all_data.drop(['SalePrice'], axis=1, inplace = True)
     
     convert_numeric2category(all_data)
     was_missing_columns = handle_missing(all_data, False)
@@ -346,8 +362,12 @@ def get_processed_datasets():
     
     skewed_features = log_transform(all_data_encoded, list(set(num_columns)-set(was_missing_columns)), 0.5)
     
-    train_y = pd.Series(list(np.log1p(train.SalePrice)))
+    train_y = (np.log1p(train.SalePrice)).values
     train_X = (all_data_encoded.loc[all_data_encoded.dataset == "train"]).drop(['dataset'], axis=1)
     test_X = (all_data_encoded.loc[all_data_encoded.dataset == "test"]).drop(['dataset'], axis=1)
     
     return (train_X, train_y, test_X, list(test.Id))
+
+
+
+

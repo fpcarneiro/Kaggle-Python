@@ -1,6 +1,7 @@
 import preprocessing as pp
 import ensemble as em
 import feature_selection as fs
+import cv_lab as cvl
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import RobustScaler
@@ -10,6 +11,7 @@ import lightgbm as lgb
 from sklearn.svm import SVR, LinearSVR
 from sklearn.linear_model import ElasticNet, Lasso, BayesianRidge, Ridge, SGDRegressor, LassoLars
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, ExtraTreesRegressor
+from sklearn.model_selection import train_test_split
 
 import warnings
 def ignore_warn(*args, **kwargs):
@@ -24,12 +26,16 @@ train_X = train_X[features_variance]
 test_X = test_X[features_variance]
 
 importances = fs.get_feature_importance(Lasso(alpha=0.000507), train_X, train_y)
-#fs.plot_features_importances(importances, show_importance_zero = False)
+fs.plot_features_importances(importances, show_importance_zero = False)
 
 features_select_from_model, pipe_select_from_model = fs.remove_features_from_model(estimator = Lasso(alpha = 0.000507), 
                                                           scaler = RobustScaler(), X = train_X, y = train_y)
 train_X_reduced = pipe_select_from_model.transform(train_X)
 test_X_reduced = pipe_select_from_model.transform(test_X)
+
+# split into a training and testing set
+X_train, X_test, y_train, y_test = train_test_split(train_X_reduced, train_y, 
+                                                    test_size=0.20, random_state=42)
 
 #########################################################################################################
 
@@ -82,28 +88,62 @@ models.append(("lasso_lars", model_lasso_lars))
 models.append(("lsvr", model_lsvr))
 #models.append(("sgd", model_sgd))
 #models.append(("extra", model_extra))
+models.append(("average", em.AveragingModels(models = [model_ridge, model_byr, model_xgb])))
 
-scores = []
-names = []
-for name, model in models:
-    names.append(name)
-    scores.append(np.sqrt(pp.score_model(model, train_X_reduced, train_y)).mean())
-tab = pd.DataFrame({ "Model" : names, "Score" : scores })
-tab = tab.sort_values(by=['Score'], ascending = True)
-print(tab)
+######## cross validation #####################################################
+def cross_validation_models(models_set, X_train_set, y_train_set):
+    scores = []
+    names = []
+    for name, model in models_set:
+        names.append(name)
+        scores.append(np.sqrt(pp.score_model(model, X_train_set, y_train_set)).mean())
+    tab = pd.DataFrame({ "Model" : names, "Score" : scores })
+    tab = tab.sort_values(by=['Score'], ascending = True)
+    return(tab)
+
+######## test models ##########################################################
+def train_test_models(models_set, X_train_set, y_train_set, X_test_set, y_test_set):
+    scores = []
+    names = []
+    for name, model in models_set:
+        model.fit(X_train_set, y_train_set)
+        predicted_prices = model.predict(X_test_set)
+        score = cvl.score_sq(y_test_set, predicted_prices)
+        names.append(name)
+        scores.append(score)
+    tab = pd.DataFrame({ "Model" : names, "Score" : scores })
+    tab = tab.sort_values(by=['Score'], ascending = True)
+    return(tab)
+
+cross_validation_table = cross_validation_models(models, X_train, y_train)
+print(cross_validation_table)
+
+test_table = train_test_models(models, X_train, y_train, X_test, y_test)
+print(test_table)
+
+def train_submit(model, X_train_set, y_train_set, test_X_to_submit, file_name = 'submission.csv'):
+    model.fit(X_train_set, y_train_set)
+    predicted = np.expm1(model.predict(test_X_to_submit))
+    print(predicted)
+    submission = pd.DataFrame({'Id': ids, 'SalePrice': predicted})
+    submission.to_csv(file_name, index=False)
     
-averaged_models = em.AveragingModels(models = [model_svr, model_KRR, model_ridge])
+train_submit(em.AveragingModels(models = [model_svr, model_byr, model_xgb]), 
+                                                                      train_X_reduced, train_y, test_X_reduced,
+                                                                      'submission_avg_1.csv')
+    
+    
+    
+# Best one so far: model_svr, model_KRR, model_xgb
+# Try this combination: model_svr, model_KRR, averaged_models_tree
+averaged_models = em.AveragingModels(models = [model_svr, model_KRR, model_xgb])
 
 score_avg = np.sqrt(pp.score_model(averaged_models, train_X_reduced, train_y))
 print(" Averaged base models score: {:.6f} ({:.6f})\n".format(score_avg.mean(), score_avg.std()))
 
-averaged_models.fit(train_X_reduced, train_y)
-predicted_prices_averaged = np.expm1(averaged_models.predict(test_X_reduced))
-print(predicted_prices_averaged)
-my_submission = pd.DataFrame({'Id': ids, 'SalePrice': predicted_prices_averaged})
-my_submission.to_csv('submission_avg.csv', index=False)
 
-stacked_averaged_models = em.StackingAveragedModels(base_models = [model_byr, model_KRR, model_ridge],
+
+stacked_averaged_models = em.StackingAveragedModels(base_models = [model_KRR, model_xgb],
                                                  meta_model = model_svr)
 
 score_stacked_averaged = np.sqrt(pp.score_model(stacked_averaged_models, train_X_reduced, train_y))
@@ -130,3 +170,24 @@ my_submission.to_csv('submission_ensemble.csv', index=False)
 
 
 
+averaged_models_tree = em.AveragingModels(models = [model_lgb, model_GBoost])
+
+score_avg_tree = np.sqrt(pp.score_model(averaged_models_tree, train_X_reduced, train_y))
+print(" Averaged base models score: {:.6f} ({:.6f})\n".format(score_avg_tree.mean(), score_avg_tree.std()))
+
+averaged_models_linear = em.AveragingModels(models = [model_svr, model_KRR])
+
+score_avg_linear = np.sqrt(pp.score_model(averaged_models_linear, train_X_reduced, train_y))
+print(" Averaged base models score: {:.6f} ({:.6f})\n".format(score_avg_linear.mean(), score_avg_linear.std()))
+
+
+averaged = em.AveragingModels(models = [averaged_models_tree, averaged_models_linear])
+
+score_avg_all = np.sqrt(pp.score_model(averaged, train_X_reduced, train_y))
+print(" Averaged base models score: {:.6f} ({:.6f})\n".format(score_avg_all.mean(), score_avg_all.std()))
+
+averaged.fit(train_X_reduced, train_y)
+predicted_prices_averaged_all = np.expm1(averaged.predict(test_X_reduced))
+print(predicted_prices_averaged_all)
+my_submission = pd.DataFrame({'Id': ids, 'SalePrice': predicted_prices_averaged_all})
+my_submission.to_csv('submission_avg.csv', index=False)
