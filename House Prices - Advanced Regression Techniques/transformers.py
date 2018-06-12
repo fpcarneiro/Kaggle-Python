@@ -203,7 +203,9 @@ def have_stuff_features(X):
     
     return X
 
-def log_transform(X, cols, threshold =0.75):
+def log_transform(X, cols = None, threshold =0.75):
+    if cols == None:
+        cols = X.select_dtypes(exclude=['object']).columns
     skewness = X[cols].apply(lambda x: skew(x))
     skewness = skewness[abs(skewness) > threshold]
     print(str(skewness.shape[0]) + " skewed numerical features to log transform")
@@ -286,18 +288,18 @@ class SimplifiedFeatureTransformer(BaseEstimator, TransformerMixin):
         return self
     
 class PolinomialFeaturesTransformer(BaseEstimator, TransformerMixin):
-    def __init__(self, col = "SalePrice"):
+    def __init__(self, polinomial_cols = None, col = "SalePrice"):
         self.column = col
-        self.polinomial_cols = []
+        self.polinomial_cols = polinomial_cols
 
     def transform(self, X, y=None):
         return add_polinomial_features(X, self.polinomial_cols)
 
     def fit(self, X, y=None):
-        #features_variance = fs.list_features_low_variance(X, y)
-        corr = X.corr().loc[:, self.column]
-        corr = corr.sort_values(ascending = False)
-        self.polinomial_cols = list(corr[1:11].index)
+        if self.polinomial_cols == None:
+            corr = X.corr().loc[:, self.column]
+            corr = corr.sort_values(ascending = False)
+            self.polinomial_cols = list(corr[1:11].index)
         return self
 
 class HaveStuffTransformer(BaseEstimator, TransformerMixin):
@@ -325,29 +327,17 @@ class HotEncodeTransformer(BaseEstimator, TransformerMixin):
 class LogTransformer(BaseEstimator, TransformerMixin):
     def __init__(self, columns = None, threshold = 0.75):
         self.columns = columns
+        self.columns_skewness = []
         self.threshold = threshold
 
     def transform(self, X, y=None):
-        return log_transform(X, self.columns, threshold = self.threshold)
+        print(str(len(self.columns_skewness)) + " skewed numerical features to log transform")
+        X[self.columns_skewness] = np.log1p(X[self.columns_skewness])
+        return X
 
     def fit(self, X, y=None):
         if self.columns == None:
             self.columns = list(X.select_dtypes(exclude=['object']).columns)
+        skewness = X[self.columns].apply(lambda x: skew(x))
+        self.columns_skewness = skewness[abs(skewness) > self.threshold].index
         return self
-
-#pipe = Pipeline([('convert', Numeric2CategoryTransformer(["MSSubClass", "MoSold"])),
-#                 ('missing', HandleMissingTransformer()),
-#                 ('more_features', MoreFeaturesTransformer()),
-#                 ('encode', EncodeTransformer(prefix = "Shrunk_")),
-#                 ('feature_engineering', FeatureEngineeringTransformer()),
-#                 ('simplified_features', SimplifiedFeatureTransformer(prefix = "Shrunk_")),
-#                 ('havestuff_features', HaveStuffTransformer()),
-#                 ])
-#
-#train = pipe.fit_transform(train)
-#test = pipe.fit_transform(test)
-#
-#t = PolinomialFeaturesTransformer()
-#t.fit(train)
-#train = t.transform(train)
-#test = t.transform(test)
