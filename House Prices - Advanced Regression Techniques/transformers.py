@@ -37,6 +37,7 @@ def more_features(X):
     X.loc[:, "Remodeled"] = (X.loc[:, "YearRemodAdd"] != X.loc[:,"YearBuilt"]) * 1
     X.loc[:, "RecentRemodel"] = (X.loc[:, "YearRemodAdd"] == X.loc[:,"YrSold"]) * 1
     X.loc[:, "VeryNewHouse"] = (X.loc[:, "YearBuilt"] == X.loc[:,"YrSold"]) * 1
+    X.loc[:, "IsHighSeason"] = (X.loc[:, "MoSold"].isin(["5", "6", "7"])) * 1
     return X
 
 def add_columns_was_missing(X):
@@ -175,8 +176,8 @@ def add_polinomial_features(X, polinomial_cols = ["OverallQual", "AllSF", "AllFl
     
     for col in polinomial_cols:
         X[col+'-2'] = X.loc[:,col]**2
-        X[col+'-3'] = X.loc[:,col]**3
-        X[col+'-sqrt'] = np.sqrt(np.absolute(X.loc[:,col]))
+        #X[col+'-3'] = X.loc[:,col]**3
+        #X[col+'-sqrt'] = np.sqrt(np.absolute(X.loc[:,col]))
     
     return X
 

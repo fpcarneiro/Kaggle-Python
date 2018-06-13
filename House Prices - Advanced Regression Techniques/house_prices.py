@@ -1,6 +1,7 @@
 import preprocessing as pp
 import transformers as tr
 import ensemble as em
+from cv_lab import score_sq
 from sklearn.pipeline import Pipeline
 import feature_selection as fs
 import numpy as np
@@ -12,21 +13,34 @@ from sklearn.linear_model import ElasticNet, Lasso, BayesianRidge, Ridge, SGDReg
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, ExtraTreesRegressor
 from sklearn.preprocessing import RobustScaler
 import pandas as pd
+from sklearn.model_selection import train_test_split
 
-def get_validation_scores(models, X, y):
-    scores = []
+def get_validation_scores(models, X_train, y_train, X_test = [], y_test = []):
+    scores_val = []
+    scores_test = []
     names = []
     for name, model in models:
         names.append(name)
-        scores.append(np.sqrt(pp.score_model(model, X, y)).mean())
-    tab = pd.DataFrame({ "Model" : names, "Score" : scores })
-    tab = tab.sort_values(by=['Score'], ascending = True)
+        scores_val.append(np.sqrt(pp.score_model(model, X_train, y_train)).mean())
+        if len(X_test) != 0:
+            model.fit(X_train, y_train)
+            st = get_test_scores(model, X_test, y_test)
+            scores_test.append(st)
+    if len(X_test) != 0:
+        tab = pd.DataFrame({ "Model" : names, "Cross Validation" : scores_val, "Test": scores_test })
+    else:
+        tab = pd.DataFrame({ "Model" : names, "Cross Validation" : scores_val })
+    tab = tab.sort_values(by=['Test'], ascending = True)
     return(tab)
+
+def get_test_scores(model, X_test, y_test):
+    predicted = model.predict(X_test)
+    score = score_sq(y_test, predicted)
+    return(score)
 
 def make_submission(model, X_train, y_train, X_test, filename = 'submission.csv'):
     model.fit(X_train, y_train)
     predicted = np.expm1(model.predict(X_test))
-    print(predicted)
     my_submission = pd.DataFrame({'Id': ids, 'SalePrice': predicted})
     my_submission.to_csv(filename, index=False)
 
@@ -53,20 +67,21 @@ basic_pipeline = Pipeline([('convert', tr.Numeric2CategoryTransformer(["MSSubCla
                  ('more_features', tr.MoreFeaturesTransformer()),
                  ('encode', tr.EncodeTransformer(prefix = "Shrunk_")),
                  ('feature_engineering', tr.FeatureEngineeringTransformer()),
-                 ('simplified_features', tr.SimplifiedFeatureTransformer(prefix = "Shrunk_"))])
-    
+                 ('simplified_features', tr.SimplifiedFeatureTransformer(prefix = "Shrunk_"))
+                 ])
+
 train = basic_pipeline.fit_transform(train)
 test = basic_pipeline.fit_transform(test)
 
-polinomial_transformation = tr.PolinomialFeaturesTransformer(["OverallQual", "AllSF", "AllFlrsSF", "GrLivArea", "Shrunk_OverallQual",
-            "ExterQual", "GarageCars", "TotalBath", "KitchenQual", "GarageScore"])
-polinomial_transformation.fit(train)
-train = polinomial_transformation.transform(train)
-test = polinomial_transformation.transform(test)
+#polinomial_transformation = tr.PolinomialFeaturesTransformer(["OverallQual", "AllSF", "AllFlrsSF", "GrLivArea", "Shrunk_OverallQual",
+#            "ExterQual", "GarageCars", "TotalBath", "KitchenQual", "GarageScore"])
+#polinomial_transformation.fit(train)
+#train = polinomial_transformation.transform(train)
+#test = polinomial_transformation.transform(test)
 
 num_columns_2 = list(train.select_dtypes(exclude=['object']).columns)
 cat_columns_2 = list(train.select_dtypes(include=['object']).columns)
-                             
+
 second_pipeline = Pipeline([
                  ('have_stuff_features', tr.HaveStuffTransformer()),
                  ('hot_encode', tr.HotEncodeTransformer()),
@@ -95,6 +110,7 @@ features_select_from_model, pipe_select_from_model = fs.remove_features_from_mod
 train_X_reduced = pipe_select_from_model.transform(train_X)
 test_X_reduced = pipe_select_from_model.transform(test_X)
 
+X_train, X_test, y_train, y_test = train_test_split(train_X_reduced, train_y, test_size=0.20, random_state=42)
 
 ##################
 model_lasso = Lasso(alpha=0.000507, random_state = 1)
@@ -128,7 +144,7 @@ model_lgb = lgb.LGBMRegressor(objective='regression',num_leaves=5,
                               feature_fraction_seed=9, bagging_seed=9,
                               min_data_in_leaf =6, min_sum_hessian_in_leaf = 11)
 
-model_lasso_lars = LassoLars(alpha = 0.17321583392)
+model_lasso_lars = LassoLars(alpha=0.000507)
 
 #Linear Models
 models = []
@@ -147,10 +163,10 @@ models.append(("lsvr", model_lsvr))
 #models.append(("sgd", model_sgd))
 #models.append(("extra", model_extra))
 
-cross_val_table = get_validation_scores(models, train_X_reduced, train_y)
+cross_val_table = get_validation_scores(models, X_train, y_train, X_test, y_test)
 print(cross_val_table)
 
-averaged_models = em.AveragingModels(models = [model_svr, model_KRR, model_lgb])
+averaged_models = em.AveragingModels(models = [model_ridge, model_KRR, model_lgb])
 stacked_averaged_models = em.StackingAveragedModels(base_models = [model_KRR, model_lgb], meta_model = model_svr)
 averaged_plus = em.AveragingModels(models = [averaged_models, model_GBoost, model_xgb], weights = [0.7, 0.2, 0.1])
 averaged_plus_plus = em.AveragingModels(models = [stacked_averaged_models, model_GBoost, model_xgb], weights = [0.7, 0.2, 0.1])
@@ -161,7 +177,7 @@ ensemble_models.append(("stacked", stacked_averaged_models))
 ensemble_models.append(("averaged_plus", averaged_plus))
 ensemble_models.append(("stacked_plus_plus", averaged_plus_plus))
 
-cross_val_table_ensemble = get_validation_scores(ensemble_models, train_X_reduced, train_y)
+cross_val_table_ensemble = get_validation_scores(ensemble_models, X_train, y_train, X_test, y_test)
 print(cross_val_table_ensemble)
 
-make_submission(averaged_plus, train_X_reduced, train_y, test_X_reduced)
+make_submission(averaged_models, train_X_reduced, train_y, test_X_reduced, filename = 'submission_KRR.csv')
