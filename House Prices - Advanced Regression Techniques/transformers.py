@@ -50,11 +50,12 @@ def add_columns_was_missing(X):
     return X
 
 def handle_missing(X, add_was_missing_columns = False):
+    group_by_col = "Neighborhood"
     
     if add_was_missing_columns :
         X = add_columns_was_missing(X)
     
-    mode_numcols = ['LotFrontage']
+    median_numcols = ['LotFrontage']
     
     no_catcols = ["Alley", "BsmtCond", "BsmtExposure", "BsmtFinType1", 
                   "BsmtFinType2", "BsmtQual", "Fence", "FireplaceQu", 
@@ -67,7 +68,7 @@ def handle_missing(X, add_was_missing_columns = False):
     zero_cols = ["MasVnrArea", "BsmtFullBath", "BsmtHalfBath", "BsmtFinSF1", "BsmtFinSF2", "BsmtUnfSF", "TotalBsmtSF",
                  "GarageArea", "GarageCars"]
     
-    cols_mode = mode_numcols + mode_catcols
+    cols_mode = mode_catcols
     
     missing_dict = dict(zip(zero_cols,[0] * len(zero_cols)))
     missing_dict.update(dict(zip(no_catcols,["No"] * len(no_catcols))))
@@ -76,10 +77,15 @@ def handle_missing(X, add_was_missing_columns = False):
         X.loc[:, k] = X.loc[:, k].fillna(v)
 
     for col in cols_mode:
-        X[col] = X[col].fillna(X[col].mode()[0])
+        X[col] = X.groupby(group_by_col)[col].transform(lambda x: x.fillna(x.mode()[0]))
+        
+    for col in median_numcols:
+        X[col] = X.groupby(group_by_col)[col].transform(lambda x: x.fillna(x.median()))
     
     X.loc[X.GarageYrBlt.isnull(),'GarageYrBlt'] = X.loc[X.GarageYrBlt.isnull(),'YearBuilt']
-               
+    
+    
+    
     return X
 
 def encode_features(X, features, scales):
