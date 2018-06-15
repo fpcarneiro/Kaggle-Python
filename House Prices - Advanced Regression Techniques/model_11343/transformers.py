@@ -15,15 +15,6 @@ utilities_scale = {"ELO" : 1, "NoSeWa" : 2, "NoSewr" : 3, "AllPub" : 4}
 air_scale = {"N" : 0, "Y" : 1}
 finished_scale = {"No" : 0, "Unf" : 1, "RFn" : 2, "Fin" : 3}
 
-def add_date_related_features(X):
-    X['Age'] = X['YrSold'] - X['YearBuilt']
-    X.loc[X.YearBuilt > X.YrSold, "Age"] = 0
-    X.loc[:, "VeryNewHouse"] = (X.loc[:, "YearBuilt"] == X.loc[:,"YrSold"]) * 1
-    X['RemodelAge'] = X['YrSold'] - X['YearRemodAdd']
-    X.loc[X.YearRemodAdd > X.YrSold, "RemodelAge"] = 0
-    X.loc[:, "IsHighSeason"] = (X.loc[:, "MoSold"].isin(["5", "6", "7"])) * 1
-    return X
-
 def get_feature_groups(X):
     num_columns = list(X.select_dtypes(exclude=['object']).columns)
     cat_columns = list(X.select_dtypes(include=['object']).columns)
@@ -45,7 +36,8 @@ def more_features(X):
     X.loc[:, "IsPavedDrive"] = (X.loc[:, "PavedDrive"] == "Y") * 1
     X.loc[:, "Remodeled"] = (X.loc[:, "YearRemodAdd"] != X.loc[:,"YearBuilt"]) * 1
     X.loc[:, "RecentRemodel"] = (X.loc[:, "YearRemodAdd"] == X.loc[:,"YrSold"]) * 1
-    
+    X.loc[:, "VeryNewHouse"] = (X.loc[:, "YearBuilt"] == X.loc[:,"YrSold"]) * 1
+    X.loc[:, "IsHighSeason"] = (X.loc[:, "MoSold"].isin(["5", "6", "7"])) * 1
     return X
 
 def add_columns_was_missing(X):
@@ -231,16 +223,6 @@ def log_transform(X, cols = None, threshold =0.75):
 def hot_encode(X, columns):
     return pd.get_dummies(X, columns = columns)
     #return (pd.concat([X, encoded], axis=1).drop(columns, axis=1))
-
-class DateRelatedFeaturesTransformer(BaseEstimator, TransformerMixin):
-    def __init__(self):
-        pass
-
-    def transform(self, X, y=None):
-        return add_date_related_features(X)
-
-    def fit(self, X, y=None):
-        return self
 
 class DropOutliersTransformer(BaseEstimator, TransformerMixin):
     def __init__(self):

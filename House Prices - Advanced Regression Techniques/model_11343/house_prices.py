@@ -65,7 +65,6 @@ train.drop(['SalePrice'], axis=1, inplace = True)
 
 basic_pipeline = Pipeline([('convert', tr.Numeric2CategoryTransformer(["MSSubClass", "MoSold"])),
                  ('missing', tr.HandleMissingTransformer()),
-                 ('date_related_features', tr.DateRelatedFeaturesTransformer()),
                  #('more_features', tr.MoreFeaturesTransformer()),
                  #('encode', tr.EncodeTransformer(prefix = "Shrunk_")),
                  #('feature_engineering', tr.FeatureEngineeringTransformer()),
@@ -171,8 +170,9 @@ print(cross_val_table)
 cross_val_table = get_validation_scores(models, train_X_reduced, train_y)
 print(cross_val_table)
 
+
 averaged_models = em.AveragingModels(models = [model_lgb, model_KRR, model_svr])
-stacked_averaged_models = em.StackingAveragedModels(base_models = [model_svr, model_lgb], meta_model = model_KRR)
+stacked_averaged_models = em.StackingAveragedModels(base_models = [model_KRR, model_lgb], meta_model = model_svr)
 averaged_plus = em.AveragingModels(models = [averaged_models, model_GBoost, model_xgb], weights = [0.7, 0.2, 0.1])
 averaged_plus_plus = em.AveragingModels(models = [stacked_averaged_models, model_GBoost, model_xgb], weights = [0.7, 0.2, 0.1])
 
@@ -185,4 +185,4 @@ ensemble_models.append(("stacked_plus_plus", averaged_plus_plus))
 cross_val_table_ensemble = get_validation_scores(ensemble_models, train_X_reduced, train_y)
 print(cross_val_table_ensemble)
 
-make_submission(averaged_plus_plus, train_X_reduced, train_y, test_X_reduced, filename = 'submission_stacked.csv')
+make_submission(averaged_models, train_X_reduced, train_y, test_X_reduced, filename = 'submission_avg.csv')
