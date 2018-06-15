@@ -66,8 +66,9 @@ train.drop(['SalePrice'], axis=1, inplace = True)
 basic_pipeline = Pipeline([('convert', tr.Numeric2CategoryTransformer(["MSSubClass", "MoSold"])),
                  ('missing', tr.HandleMissingTransformer()),
                  ('date_related_features', tr.DateRelatedFeaturesTransformer()),
+                 ('encode', tr.EncodeTransformer(prefix = "Shrunk_")),
+                 #('log_transform', tr.LogTransformer()),
                  #('more_features', tr.MoreFeaturesTransformer()),
-                 #('encode', tr.EncodeTransformer(prefix = "Shrunk_")),
                  #('feature_engineering', tr.FeatureEngineeringTransformer()),
                  #('simplified_features', tr.SimplifiedFeatureTransformer(prefix = "Shrunk_"))
                  ])
@@ -75,14 +76,18 @@ basic_pipeline = Pipeline([('convert', tr.Numeric2CategoryTransformer(["MSSubCla
 train = basic_pipeline.fit_transform(train)
 test = basic_pipeline.fit_transform(test)
 
+num_columns_2 = list(train.select_dtypes(exclude=['object']).columns)
+
+log_transformation = tr.LogTransformer(threshold = 0.50)
+log_transformation.fit(train)
+train = log_transformation.fit_transform(train)
+test = log_transformation.transform(test)
+
 #polinomial_transformation = tr.PolinomialFeaturesTransformer(["OverallQual", "AllSF", "AllFlrsSF", "GrLivArea", "Shrunk_OverallQual",
 #            "ExterQual", "GarageCars", "TotalBath", "KitchenQual", "GarageScore"])
 #polinomial_transformation.fit(train)
 #train = polinomial_transformation.transform(train)
 #test = polinomial_transformation.transform(test)
-
-num_columns_2 = list(train.select_dtypes(exclude=['object']).columns)
-cat_columns_2 = list(train.select_dtypes(include=['object']).columns)
 
 second_pipeline = Pipeline([
                  #('have_stuff_features', tr.HaveStuffTransformer()),
@@ -93,11 +98,6 @@ train = second_pipeline.fit_transform(train)
 test = second_pipeline.fit_transform(test)
 
 train, test = train.align(test,join='outer', axis=1, fill_value = 0)
-
-log_transformation = tr.LogTransformer(num_columns_2, threshold = 0.5)
-log_transformation.fit(train)
-train = log_transformation.transform(train)
-test = log_transformation.transform(test)
 
 features_variance = fs.list_features_low_variance(train, train_y)
 

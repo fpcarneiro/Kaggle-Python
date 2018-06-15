@@ -22,6 +22,8 @@ def add_date_related_features(X):
     X['RemodelAge'] = X['YrSold'] - X['YearRemodAdd']
     X.loc[X.YearRemodAdd > X.YrSold, "RemodelAge"] = 0
     X.loc[:, "IsHighSeason"] = (X.loc[:, "MoSold"].isin(["5", "6", "7"])) * 1
+    X.loc[:, "Remodeled"] = (X.loc[:, "YearRemodAdd"] != X.loc[:,"YearBuilt"]) * 1
+    X.loc[:, "RecentRemodel"] = (X.loc[:, "YearRemodAdd"] == X.loc[:,"YrSold"]) * 1
     return X
 
 def get_feature_groups(X):
@@ -42,10 +44,7 @@ def more_features(X):
     X.loc[:, "IsLandSlopeGentle"] = (X.loc[:, "LandSlope"] == "Gtl") * 1       
     X.loc[:, "IsElectricalSBrkr"] = (X.loc[:, "Electrical"] == "SBrkr") * 1
     X.loc[:, "IsGarageDetached"] = (X.loc[:, "GarageType"] == "Detchd") * 1
-    X.loc[:, "IsPavedDrive"] = (X.loc[:, "PavedDrive"] == "Y") * 1
-    X.loc[:, "Remodeled"] = (X.loc[:, "YearRemodAdd"] != X.loc[:,"YearBuilt"]) * 1
-    X.loc[:, "RecentRemodel"] = (X.loc[:, "YearRemodAdd"] == X.loc[:,"YrSold"]) * 1
-    
+    X.loc[:, "IsPavedDrive"] = (X.loc[:, "PavedDrive"] == "Y") * 1    
     return X
 
 def add_columns_was_missing(X):
@@ -102,16 +101,21 @@ def encode_features(X, features, scales):
     return X
 
 def encode(X):
-    cols = ["Alley", "BsmtCond", "BsmtExposure", "BsmtFinType1", "BsmtFinType2", "BsmtQual", "ExterCond",
-            "ExterQual", "FireplaceQu", "Functional", "GarageCond", "GarageQual", "GarageFinish",
-            "HeatingQC", "KitchenQual", "LandSlope", "LotShape", "PavedDrive", "PoolQC", "Street",
-            "Utilities", "CentralAir"]
-    scales = [access_scale, quality_scale, exposure_scale, basement_scale, basement_scale, quality_scale, 
-              quality_scale, quality_scale, quality_scale, functional_scale, quality_scale, quality_scale,
-              finished_scale, quality_scale, quality_scale, slope_scale, shape_scale, paved_scale, quality_scale,
-              access_scale, utilities_scale, air_scale]
+#    cols = ["Alley", "BsmtCond", "BsmtExposure", "BsmtFinType1", "BsmtFinType2", "BsmtQual", "ExterCond",
+#            "ExterQual", "FireplaceQu", "Functional", "GarageCond", "GarageQual", "GarageFinish",
+#            "HeatingQC", "KitchenQual", "LandSlope", "LotShape", "PavedDrive", "PoolQC", "Street",
+#            "Utilities", "CentralAir"]
+#    scales = [access_scale, quality_scale, exposure_scale, basement_scale, basement_scale, quality_scale, quality_scale,
+#              quality_scale, quality_scale, functional_scale, quality_scale, quality_scale, finished_scale, 
+#              quality_scale, quality_scale, slope_scale, shape_scale, paved_scale, quality_scale, access_scale, 
+#              utilities_scale, air_scale]
+    
+    cols_quality = ["BsmtCond", "BsmtQual", "ExterCond", "ExterQual", "FireplaceQu", "GarageCond", "GarageQual",
+                    "HeatingQC", "KitchenQual", "PoolQC"]
 
-    return encode_features(X, cols, scales)
+    scales = [quality_scale] * len (cols_quality)
+    
+    return encode_features(X, cols_quality, scales)
 
 def shrink_scales(X, prefix = ""):
     overall_scale = {1 : 1, 2 : 1, 3 : 1, # bad
@@ -287,7 +291,7 @@ class EncodeTransformer(BaseEstimator, TransformerMixin):
         self.prefix = prefix
 
     def transform(self, X, y=None):
-        return shrink_scales(encode(X), self.prefix)
+        return encode(X)
 
     def fit(self, X, y=None):
         return self
@@ -357,7 +361,7 @@ class LogTransformer(BaseEstimator, TransformerMixin):
 
     def transform(self, X, y=None):
         print(str(len(self.columns_skewness)) + " skewed numerical features to log transform")
-        X[self.columns_skewness] = np.log1p(X[self.columns_skewness])
+        X.loc[:,self.columns_skewness] = np.log1p(X.loc[:, self.columns_skewness])
         return X
 
     def fit(self, X, y=None):
@@ -365,4 +369,5 @@ class LogTransformer(BaseEstimator, TransformerMixin):
             self.columns = list(X.select_dtypes(exclude=['object']).columns)
         skewness = X[self.columns].apply(lambda x: skew(x))
         self.columns_skewness = skewness[abs(skewness) > self.threshold].index
+        #self.columns_skewness = self.columns
         return self
