@@ -19,11 +19,11 @@ def add_date_related_features(X):
     X['Age'] = X['YrSold'] - X['YearBuilt']
     X.loc[X.YearBuilt > X.YrSold, "Age"] = 0
     X.loc[:, "VeryNewHouse"] = (X.loc[:, "YearBuilt"] == X.loc[:,"YrSold"]) * 1
-    X['RemodelAge'] = X['YrSold'] - X['YearRemodAdd']
-    X.loc[X.YearRemodAdd > X.YrSold, "RemodelAge"] = 0
-    X.loc[:, "IsHighSeason"] = (X.loc[:, "MoSold"].isin(["5", "6", "7"])) * 1
+    X['RemodeledAge'] = X['YrSold'] - X['YearRemodAdd']
+    X.loc[X.YearRemodAdd > X.YrSold, "RemodeledAge"] = 0
     X.loc[:, "Remodeled"] = (X.loc[:, "YearRemodAdd"] != X.loc[:,"YearBuilt"]) * 1
     X.loc[:, "RecentRemodel"] = (X.loc[:, "YearRemodAdd"] == X.loc[:,"YrSold"]) * 1
+    X.loc[:, "IsHighSeason"] = (X.loc[:, "MoSold"].isin(["5", "6", "7"])) * 1
     return X
 
 def get_feature_groups(X):
@@ -222,14 +222,24 @@ def have_stuff_features(X):
     
     return X
 
-def log_transform(X, cols = None, threshold =0.75):
+def add_neighbourhood_related_features(X, cols = None):
+    group_by_col = "Neighborhood"
+    
     if cols == None:
-        cols = X.select_dtypes(exclude=['object']).columns
-    skewness = X[cols].apply(lambda x: skew(x))
-    skewness = skewness[abs(skewness) > threshold]
-    print(str(skewness.shape[0]) + " skewed numerical features to log transform")
-    skewed_features = skewness.index
-    X[skewed_features] = np.log1p(X[skewed_features])
+        #cols = ["GrLivArea", "OverallQual", "YearBuilt", "Age", "BsmtFinSF1"]
+        num_columns = list(X.select_dtypes(exclude=['object']).columns)
+        cat_columns = list(X.select_dtypes(include=['object']).columns)
+
+    for col in num_columns:
+        new_col = group_by_col + "_" + col + "_" + "Mean"
+        X[new_col] = X.groupby(group_by_col)[col].transform(lambda x: x.mean())
+        new_col = group_by_col + "_" + col + "_" + "Median"
+        X[new_col] = X.groupby(group_by_col)[col].transform(lambda x: x.median())
+        new_col = group_by_col + "_" + col + "_" + "Max"
+        X[new_col] = X.groupby(group_by_col)[col].transform(lambda x: x.max())
+        new_col = group_by_col + "_" + col + "_" + "Min"
+        X[new_col] = X.groupby(group_by_col)[col].transform(lambda x: x.min())
+    
     return X
 
 def hot_encode(X, columns):
@@ -242,6 +252,16 @@ class DateRelatedFeaturesTransformer(BaseEstimator, TransformerMixin):
 
     def transform(self, X, y=None):
         return add_date_related_features(X)
+
+    def fit(self, X, y=None):
+        return self
+    
+class NeighbourhoodRelatedFeaturesTransformer(BaseEstimator, TransformerMixin):
+    def __init__(self):
+        pass
+
+    def transform(self, X, y=None):
+        return add_neighbourhood_related_features(X)
 
     def fit(self, X, y=None):
         return self

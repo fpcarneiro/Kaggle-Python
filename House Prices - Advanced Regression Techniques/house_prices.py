@@ -16,22 +16,27 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 
 def get_validation_scores(models, X_train, y_train, X_test = [], y_test = []):
+    scores_val_mean = []
+    scores_val_std = []
     scores_val = []
     scores_test = []
     names = []
     for name, model in models:
         names.append(name)
-        scores_val.append(np.sqrt(pp.score_model(model, X_train, y_train)).mean())
+        val_scores = np.sqrt(pp.score_model(model, X_train, y_train, n_folds = 10))
+        scores_val.append(val_scores)
+        scores_val_mean.append(val_scores.mean())
+        scores_val_std.append(val_scores.std())
         if len(X_test) != 0:
             model.fit(X_train, y_train)
             st = get_test_scores(model, X_test, y_test)
             scores_test.append(st)
     if len(X_test) != 0:
-        tab = pd.DataFrame({ "Model" : names, "Cross Validation" : scores_val, "Test": scores_test })
-        tab = tab.sort_values(by=['Test'], ascending = True)
+        tab = pd.DataFrame({ "Model" : names, "Cross Validation (Mean)" : scores_val_mean, "Cross Validation (Std)" : scores_val_std, "Cross Validation (Scores)" : scores_val, "Test": scores_test })
+        tab.sort_values(by=['Test'], ascending = True, inplace = True)
     else:
-        tab = pd.DataFrame({ "Model" : names, "Cross Validation" : scores_val })
-        tab = tab.sort_values(by=['Cross Validation'], ascending = True)
+        tab = pd.DataFrame({ "Model" : names, "Cross Validation (Mean)" : scores_val_mean, "Cross Validation (Std)" : scores_val_std, "Cross Validation (Scores)" : scores_val })
+        tab.sort_values(by=['Cross Validation (Mean)'], ascending = True, inplace = True)
     return(tab)
 
 def get_test_scores(model, X_test, y_test):
@@ -65,29 +70,18 @@ train.drop(['SalePrice'], axis=1, inplace = True)
 
 basic_pipeline = Pipeline([('convert', tr.Numeric2CategoryTransformer(["MSSubClass", "MoSold"])),
                  ('missing', tr.HandleMissingTransformer()),
-                 ('date_related_features', tr.DateRelatedFeaturesTransformer()),
-                 ('encode', tr.EncodeTransformer(prefix = "Shrunk_")),
-                 #('log_transform', tr.LogTransformer()),
-                 #('more_features', tr.MoreFeaturesTransformer()),
-                 #('feature_engineering', tr.FeatureEngineeringTransformer()),
-                 #('simplified_features', tr.SimplifiedFeatureTransformer(prefix = "Shrunk_"))
+                 #('encode_features', tr.EncodeTransformer()),
+                 #('date_related_features', tr.DateRelatedFeaturesTransformer()),
+                 ('neighbourhood_features', tr.NeighbourhoodRelatedFeaturesTransformer()),
                  ])
 
 train = basic_pipeline.fit_transform(train)
 test = basic_pipeline.fit_transform(test)
 
-num_columns_2 = list(train.select_dtypes(exclude=['object']).columns)
-
 log_transformation = tr.LogTransformer(threshold = 0.50)
 log_transformation.fit(train)
 train = log_transformation.fit_transform(train)
 test = log_transformation.transform(test)
-
-#polinomial_transformation = tr.PolinomialFeaturesTransformer(["OverallQual", "AllSF", "AllFlrsSF", "GrLivArea", "Shrunk_OverallQual",
-#            "ExterQual", "GarageCars", "TotalBath", "KitchenQual", "GarageScore"])
-#polinomial_transformation.fit(train)
-#train = polinomial_transformation.transform(train)
-#test = polinomial_transformation.transform(test)
 
 second_pipeline = Pipeline([
                  #('have_stuff_features', tr.HaveStuffTransformer()),
@@ -104,18 +98,18 @@ features_variance = fs.list_features_low_variance(train, train_y)
 train_X = train[features_variance]
 test_X = test[features_variance]
 
-importances = fs.get_feature_importance(Lasso(alpha=0.000507), train_X, train_y)
+importances = fs.get_feature_importance(Lasso(alpha=0.003), train_X, train_y)
 fs.plot_features_importances(importances, show_importance_zero = False)
 
-features_select_from_model, pipe_select_from_model = fs.remove_features_from_model(estimator = Lasso(alpha=0.000507), 
+features_select_from_model, pipe_select_from_model = fs.remove_features_from_model(estimator = Lasso(alpha=0.003), 
                                                           scaler = RobustScaler(), X = train_X, y = train_y)
 train_X_reduced = pipe_select_from_model.transform(train_X)
 test_X_reduced = pipe_select_from_model.transform(test_X)
 
-X_train, X_test, y_train, y_test = train_test_split(train_X_reduced, train_y, test_size=0.20, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(train_X_reduced, train_y, test_size=0.2)
 
 ##################
-model_lasso = Lasso(alpha=0.000507, random_state = 1)
+model_lasso = Lasso(alpha=0.0004, random_state = 1)
 model_ridge = Ridge(alpha=10.0)
 model_svr = SVR(C = 15, epsilon = 0.009, gamma = 0.0004, kernel = 'rbf')
 model_ENet = ElasticNet(alpha=0.0005, l1_ratio=.9, random_state=3, max_iter = 10000)
@@ -171,7 +165,7 @@ print(cross_val_table)
 cross_val_table = get_validation_scores(models, train_X_reduced, train_y)
 print(cross_val_table)
 
-averaged_models = em.AveragingModels(models = [model_lgb, model_KRR, model_svr])
+averaged_models = em.AveragingModels(models = [model_lgb, model_byr, model_svr, model_ridge])
 stacked_averaged_models = em.StackingAveragedModels(base_models = [model_svr, model_lgb], meta_model = model_KRR)
 averaged_plus = em.AveragingModels(models = [averaged_models, model_GBoost, model_xgb], weights = [0.7, 0.2, 0.1])
 averaged_plus_plus = em.AveragingModels(models = [stacked_averaged_models, model_GBoost, model_xgb], weights = [0.7, 0.2, 0.1])
@@ -180,9 +174,20 @@ ensemble_models = []
 ensemble_models.append(("averaged", averaged_models))
 ensemble_models.append(("stacked", stacked_averaged_models))
 ensemble_models.append(("averaged_plus", averaged_plus))
-ensemble_models.append(("stacked_plus_plus", averaged_plus_plus))
+ensemble_models.append(("averaged_plus_plus", averaged_plus_plus))
+
+cross_val_table_ensemble = get_validation_scores(ensemble_models, X_train, y_train, X_test, y_test)
+print(cross_val_table_ensemble)
 
 cross_val_table_ensemble = get_validation_scores(ensemble_models, train_X_reduced, train_y)
 print(cross_val_table_ensemble)
 
-make_submission(averaged_plus_plus, train_X_reduced, train_y, test_X_reduced, filename = 'submission_stacked.csv')
+make_submission(averaged_models, train_X_reduced, train_y, test_X_reduced, filename = 'submission_avg.csv')
+
+
+
+
+
+
+
+import featuretools as ft

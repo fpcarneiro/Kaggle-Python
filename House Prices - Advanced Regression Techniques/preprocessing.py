@@ -250,7 +250,7 @@ def polinomial_features(dataset, polinomial_cols = ["OverallQual", "AllSF", "All
     return list(set(dataset.columns) - cols)
 
 def score_model(estimator, X, y, n_folds = 5, scoring_func="neg_mean_squared_error"):
-    kf = KFold(n_folds, shuffle=True, random_state=42).get_n_splits(X)
+    kf = KFold(n_folds, shuffle=True).get_n_splits(X)
     score = -cross_val_score(estimator, X, y, scoring=scoring_func, cv = kf)
     return(score)
 
