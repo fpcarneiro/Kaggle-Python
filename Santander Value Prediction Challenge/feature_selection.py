@@ -35,10 +35,9 @@ def plot_features_importances(df_importances, show_importance_zero = False):
 ### Removing features with low variance - VarianceThreshold
 def list_features_low_variance(X, y, threshold = .98):
     variance_threshold = (threshold * (1 - threshold))
-    pipe_variance = Pipeline([('scaler', RobustScaler()),
-                              ('reduce_dim', VarianceThreshold(variance_threshold))])
-    pipe_variance.fit(X, y)
-    features_variance = list(X.loc[:, pipe_variance.named_steps['reduce_dim'].get_support()].columns)
+    variance = VarianceThreshold(variance_threshold)
+    variance.fit(X, y)
+    features_variance = list(X.loc[:, variance.named_steps['reduce_dim'].get_support()].columns)
     return (features_variance)
 
 ### Feature selection using SelectFromModel - Lasso(alpha = 0.000507)
@@ -60,7 +59,10 @@ def remove_features_percentile(scaler, X, y, percentile = 50):
     features_select_percentile = list(X.loc[:, pipe_percentile.named_steps['reduce_dim'].get_support()].columns)
     return (features_select_percentile, pipe_percentile)
 
-
+def low_variance_selector(X, y, threshold = .98):
+    variance_threshold = (threshold * (1 - threshold))
+    variance = VarianceThreshold(variance_threshold)
+    return (variance)
 #train_X, train_y, test_X = pp.get_processed_datasets()
 #
 #features_variance = remove_features_low_variance(train_X, train_y)

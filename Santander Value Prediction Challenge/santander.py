@@ -57,11 +57,9 @@ def ignore_warn(*args, **kwargs):
     pass
 warnings.warn = ignore_warn #ignore annoying warning (from sklearn and seaborn)
 
-train = pd.read_csv("input/train.csv")
+train, test = pp.read_train_test(train_file = 'train.csv', test_file = 'test.csv')
 
-train, test = pp.read_train_test()
-
-ids = list(test.ID)
+#ids = list(test.ID)
 
 train.drop(['ID'], axis=1, inplace = True)
 test.drop(['ID'], axis=1, inplace = True)
@@ -69,6 +67,7 @@ test.drop(['ID'], axis=1, inplace = True)
 train_y = (np.log1p(train.target)).values
 
 train.drop(['target'], axis=1, inplace = True)
+
 
 features_variance = fs.list_features_low_variance(train, train_y, threshold = .98)
 
