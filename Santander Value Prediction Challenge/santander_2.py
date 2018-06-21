@@ -16,28 +16,6 @@ import pandas as pd
 from xgboost import XGBRegressor
 from sklearn.linear_model import ElasticNet, Lasso, BayesianRidge
 
-def get_validation_scores(models, X_train, y_train, folds):
-    scores_val_mean = []
-    scores_val_std = []
-    scores_val = []
-    names = []
-    for name, model in models:
-        names.append(name)
-        val_scores = np.sqrt(pp.score_model(model, X_train, y_train, n_folds = folds))
-        scores_val.append(val_scores)
-        scores_val_mean.append(val_scores.mean())
-        scores_val_std.append(val_scores.std())
-        tab = pd.DataFrame({ "Model" : names, "Cross Validation (Mean)" : scores_val_mean, "Cross Validation (Std)" : scores_val_std, "Cross Validation (Scores)" : scores_val })
-        tab.sort_values(by=['Cross Validation (Mean)'], ascending = True, inplace = True)
-    return(tab)
-
-def make_submission(model, X_train, y_train, X_test, ids, filename = 'submission.csv'):
-    model.fit(X_train, y_train)
-    predicted = np.expm1(model.predict(X_test))
-    my_submission = pd.DataFrame({'ID': ids, 'target': predicted})
-    my_submission.to_csv(filename, index=False)
-
-
 log_transformer = FunctionTransformer(np.log1p)
 
 train, test = pp.read_train_test(train_file = 'train.csv', test_file = 'test.csv')
@@ -122,8 +100,8 @@ tree_models.append(("lgb", model_lgb))
 #tree_models.append(("xgb", model_xgb))
 tree_models.append(("byr", model_byr))
 
-cross_val_table = get_validation_scores(tree_models, train_X_reduced, train_y, 5)
+cross_val_table = pp.get_validation_scores(tree_models, train_X_reduced, train_y, 5)
 print(cross_val_table)
 
 
-make_submission(model_lgb, train_X_reduced, train_y, test_X_reduced, ids, filename = 'submission.csv')
+pp.make_submission(model_lgb, train_X_reduced, train_y, test_X_reduced, ids, filename = 'submission.csv')
