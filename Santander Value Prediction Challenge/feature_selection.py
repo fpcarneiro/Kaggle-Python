@@ -13,7 +13,6 @@ def ignore_warn(*args, **kwargs):
 warnings.warn = ignore_warn #ignore annoying warning (from sklearn and seaborn)
 
 def get_feature_importance(estimator, X, y):
-    plt.style.use('ggplot')
     pipe_importance = Pipeline([('scaler', RobustScaler()),
                               ('estimator', estimator)])
     pipe_importance.fit(X, y)
@@ -25,6 +24,7 @@ def get_feature_importance(estimator, X, y):
     return (importances)
 
 def plot_features_importances(df_importances, show_importance_zero = False):
+    plt.style.use('ggplot')
     if show_importance_zero:
         df_importances.sort_values("Feature Importance").plot(kind="barh",figsize=(15,50))
     else:

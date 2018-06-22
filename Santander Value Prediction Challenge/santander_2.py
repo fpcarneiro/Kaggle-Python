@@ -16,6 +16,8 @@ import pandas as pd
 from xgboost import XGBRegressor
 from sklearn.linear_model import ElasticNet, Lasso, BayesianRidge
 
+import feature_selection as fs
+
 log_transformer = FunctionTransformer(np.log1p)
 
 train, test = pp.read_train_test(train_file = 'train.csv', test_file = 'test.csv')
@@ -28,6 +30,11 @@ test.drop(['ID'], axis=1, inplace = True)
 train_y = (np.log1p(train.target)).values
 
 train.drop(['target'], axis=1, inplace = True)
+
+importances = fs.get_feature_importance(lgb.LGBMRegressor(objective='regression',
+                              metric="rmse",
+                              n_estimators = 500), train, train_y)
+fs.plot_features_importances(importances[:500], show_importance_zero = False)
 
 scaler = RobustScaler()
 
