@@ -391,3 +391,19 @@ class LogTransformer(BaseEstimator, TransformerMixin):
         self.columns_skewness = skewness[abs(skewness) > self.threshold].index
         #self.columns_skewness = self.columns
         return self
+    
+class BinarizerTransformer(BaseEstimator, TransformerMixin):
+    def __init__(self, columns = None):
+        self.columns = columns
+
+    def transform(self, X, y=None):
+        output = X.copy()
+        print(str(len(self.columns)) + " to binarize!")
+        output.loc[:,self.columns] = Binarizer().fit_transform(output.loc[:,self.columns])
+        return output
+
+    def fit(self, X, y=None):
+        return self
+    
+    def fit_transform(self,X,y=None):
+        return self.fit(X,y).transform(X)
