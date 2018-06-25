@@ -72,7 +72,7 @@ basic_pipeline = Pipeline([('convert', tr.Numeric2CategoryTransformer(["MSSubCla
                  ('missing', tr.HandleMissingTransformer()),
                  #('encode_features', tr.EncodeTransformer()),
                  #('date_related_features', tr.DateRelatedFeaturesTransformer()),
-                 ('neighbourhood_features', tr.NeighbourhoodRelatedFeaturesTransformer()),
+                 #('neighbourhood_features', tr.NeighbourhoodRelatedFeaturesTransformer()),
                  ])
 
 train = basic_pipeline.fit_transform(train)
@@ -93,15 +93,15 @@ test = second_pipeline.fit_transform(test)
 
 train, test = train.align(test,join='outer', axis=1, fill_value = 0)
 
-features_variance = fs.list_features_low_variance(train, train_y)
+features_variance = fs.list_features_low_variance(train, train_y, .98)
 
 train_X = train[features_variance]
 test_X = test[features_variance]
 
-importances = fs.get_feature_importance(Lasso(alpha=0.003), train_X, train_y)
+importances = fs.get_feature_importance(Lasso(alpha=0.0009), train_X, train_y)
 fs.plot_features_importances(importances, show_importance_zero = False)
 
-features_select_from_model, pipe_select_from_model = fs.remove_features_from_model(estimator = Lasso(alpha=0.003), 
+features_select_from_model, pipe_select_from_model = fs.remove_features_from_model(estimator = Lasso(alpha=0.0009), 
                                                           scaler = RobustScaler(), X = train_X, y = train_y)
 train_X_reduced = pipe_select_from_model.transform(train_X)
 test_X_reduced = pipe_select_from_model.transform(test_X)
@@ -109,29 +109,32 @@ test_X_reduced = pipe_select_from_model.transform(test_X)
 X_train, X_test, y_train, y_test = train_test_split(train_X_reduced, train_y, test_size=0.2)
 
 ##################
-model_lasso = Lasso(alpha=0.0004, random_state = 1)
-model_ridge = Ridge(alpha=10.0)
-model_svr = SVR(C = 15, epsilon = 0.009, gamma = 0.0004, kernel = 'rbf')
-model_ENet = ElasticNet(alpha=0.0005, l1_ratio=.9, random_state=3, max_iter = 10000)
-model_KRR = KernelRidge(alpha=0.5, kernel='polynomial', degree=2, coef0=2.5)
+seed = 2018
+
+model_ridge = Ridge(alpha=12.0, random_state=seed)
+model_KRR = KernelRidge(alpha=0.7, kernel='polynomial', degree=2, coef0=2.0, gamma=0.00366)
+model_svr = SVR(C=5.22, epsilon = 0.0774, gamma = 0.0004, kernel = 'rbf')
 model_byr = BayesianRidge()
-model_rforest = RandomForestRegressor(n_estimators = 300, max_features = 0.5, n_jobs = -1, min_samples_leaf = 2)
+model_ENet = ElasticNet(alpha=0.0001, l1_ratio=0.551, random_state=seed, max_iter = 10000)
+model_lasso = Lasso(alpha=0.0004, random_state = seed)
+model_lsvr = LinearSVR(C=0.525, epsilon= 0.04, random_state=seed)
+model_lasso_lars = LassoLars(alpha=1.22e-05)
 
-model_lsvr = LinearSVR()
-model_sgd = SGDRegressor()
-model_extra = ExtraTreesRegressor()
+model_rforest = RandomForestRegressor(n_estimators = 300, max_features = 0.4, 
+                                      min_samples_split = 4,
+                                      random_state=seed)
 
-model_xgb = XGBRegressor(colsample_bytree=0.4603, gamma=0.0468, 
-                             learning_rate=0.05, max_depth=4, 
+model_GBoost = GradientBoostingRegressor(n_estimators=2000, learning_rate=0.03,
+                                   max_depth=3, max_features=0.4,
+                                   min_samples_leaf=20, min_samples_split=10, 
+                                   loss='huber', random_state = seed)
+
+model_xgb = XGBRegressor(colsample_bytree=0.35, gamma=0.027, 
+                             learning_rate=0.03, max_depth=4, 
                              min_child_weight=1.7817, n_estimators=3000,
-                             reg_alpha=0.4640, reg_lambda=0.88,
+                             reg_alpha=0.43, reg_lambda=0.88,
                              subsample=0.5213, silent=1,
-                             random_state =7, nthread = -1)
-
-model_GBoost = GradientBoostingRegressor(n_estimators=3000, learning_rate=0.05,
-                                   max_depth=4, max_features='sqrt',
-                                   min_samples_leaf=15, min_samples_split=10, 
-                                   loss='huber', random_state =5)
+                             random_state = seed)
 
 model_lgb = lgb.LGBMRegressor(objective='regression',num_leaves=5,
                               learning_rate=0.05, n_estimators=720,
@@ -140,33 +143,36 @@ model_lgb = lgb.LGBMRegressor(objective='regression',num_leaves=5,
                               feature_fraction_seed=9, bagging_seed=9,
                               min_data_in_leaf =6, min_sum_hessian_in_leaf = 11)
 
-model_lasso_lars = LassoLars(alpha=0.000507)
+
 
 #Linear Models
-models = []
-models.append(("lasso", model_lasso))
-models.append(("ridge", model_ridge))
-models.append(("svr", model_svr))
-models.append(("ENet", model_ENet))
-models.append(("KRR", model_KRR))
-models.append(("byr", model_byr))
-models.append(("rforest", model_rforest))
-models.append(("xgb", model_xgb))
-models.append(("GBoost", model_GBoost))
-models.append(("lgb", model_lgb))
-models.append(("lasso_lars", model_lasso_lars))
-models.append(("lsvr", model_lsvr))
-#models.append(("sgd", model_sgd))
-#models.append(("extra", model_extra))
+linear_models = []
+linear_models.append(("lasso", model_lasso))
+linear_models.append(("ridge", model_ridge))
+linear_models.append(("svr", model_svr))
+linear_models.append(("ENet", model_ENet))
+linear_models.append(("KRR", model_KRR))
+linear_models.append(("byr", model_byr))
+linear_models.append(("lsvr", model_lsvr))
+linear_models.append(("lasso_lars", model_lasso_lars))
 
-cross_val_table = get_validation_scores(models, X_train, y_train, X_test, y_test)
+tree_models = []
+tree_models.append(("rforest", model_rforest))
+tree_models.append(("GBoost", model_GBoost))
+tree_models.append(("xgb", model_xgb))
+tree_models.append(("lgb", model_lgb))
+
+cross_val_table = get_validation_scores(linear_models, X_train, y_train, X_test, y_test)
 print(cross_val_table)
 
-cross_val_table = get_validation_scores(models, train_X_reduced, train_y)
-print(cross_val_table)
+linear_cross_val_table = get_validation_scores(linear_models, train_X_reduced, train_y)
+print(linear_cross_val_table)
 
-averaged_models = em.AveragingModels(models = [model_lgb, model_byr, model_svr, model_ridge])
-stacked_averaged_models = em.StackingAveragedModels(base_models = [model_svr, model_lgb], meta_model = model_KRR)
+tree_cross_val_table = get_validation_scores(tree_models, train_X_reduced, train_y)
+print(tree_cross_val_table)
+
+averaged_models = em.AveragingModels(models = [model_lgb, model_ridge, model_byr])
+stacked_averaged_models = em.StackingAveragedModels(base_models = [model_byr, model_lgb], meta_model = model_ridge)
 averaged_plus = em.AveragingModels(models = [averaged_models, model_GBoost, model_xgb], weights = [0.7, 0.2, 0.1])
 averaged_plus_plus = em.AveragingModels(models = [stacked_averaged_models, model_GBoost, model_xgb], weights = [0.7, 0.2, 0.1])
 
@@ -182,7 +188,9 @@ print(cross_val_table_ensemble)
 cross_val_table_ensemble = get_validation_scores(ensemble_models, train_X_reduced, train_y)
 print(cross_val_table_ensemble)
 
+make_submission(averaged_plus, train_X_reduced, train_y, test_X_reduced, filename = 'submission_avg_plus.csv')
 make_submission(averaged_models, train_X_reduced, train_y, test_X_reduced, filename = 'submission_avg.csv')
+make_submission(averaged_plus_plus, train_X_reduced, train_y, test_X_reduced, filename = 'submission_avg_plus_plus.csv')
 
 
 

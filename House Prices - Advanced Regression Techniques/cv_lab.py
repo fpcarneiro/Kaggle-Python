@@ -20,12 +20,12 @@ class HousePricesGridCV():
         self.grid_search.fit(X, y)
         self.grid_search.cv_results_['mean_test_score'] = -(self.grid_search.cv_results_['mean_test_score'])
         self.grid_search.cv_results_['mean_train_score'] = -(self.grid_search.cv_results_['mean_train_score'])
-        self.grid_search.best_score_ = -(self.grid_search.best_score_)
+        #self.grid_search.best_score_ = -(self.grid_search.best_score_)
         
     def get_best_results(self):
         results = self.grid_search.cv_results_
         print(self.grid_search.best_params_, self.grid_search.best_score_)
-        print(pd.DataFrame(results)[['params','mean_test_score']])
+        print(pd.DataFrame(results)[['params','mean_test_score', 'std_test_score']])
     
     def plot_scores(self):
         results = self.grid_search.cv_results_
