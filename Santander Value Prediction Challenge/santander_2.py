@@ -1,6 +1,7 @@
 import preprocessing as pp
 import ensemble as em
 import transformers as tf
+import cv_lab as cvl
 
 import pandas as pd
 import numpy as np
@@ -45,17 +46,35 @@ model_rforest = RandomForestRegressor(n_estimators = 50,
                                       min_samples_leaf = 4,
                                       min_samples_split = 10)
 
-model_lgb = lgb.LGBMRegressor(objective='regression',
+model_lgb = lgb.LGBMRegressor(boosting_type = 'gbdt',
+                              num_leaves = 180,
+                              max_depth = -1,
+                              learning_rate = 0.08,
+                              n_estimators = 295,
+                              #subsample_for_bin = 50000,
+                              objective='regression',
+                              #class_weight = None,
+                              #min_split_gain = 0.
+                              min_child_weight = 10,
+                              #min_child_samples = 20,
+                              subsample = 1.,
+                              subsample_freq = 0,
+                              colsample_bytree = 1.,
+                              reg_alpha = 0.3,
+                              reg_lambda = 0.1,
+                              random_state = 2018,
+                              n_jobs = -1,
+                              silent = False,
                               metric="rmse",
-                              n_estimators = 500,
-                              num_leaves = 30,
-                              learning_rate = 0.01,
+                              
+                              num_boost_round = 295,
                               bagging_fraction = 0.7,
+                              bagging_frequency = 4,
                               feature_fraction = 0.7,
-                              bagging_frequency = 5,
-                              bagging_seed = 2018,
-                              verbosity = -1)
-
+                              #early_stopping_rounds=100
+                              verbose_eval=10
+                              )
+                              
 
 model_xgb = XGBRegressor(n_estimators = 100, 
                          colsample_bytree = 0.7,
@@ -108,9 +127,12 @@ tree_models.append(("lgb", model_lgb))
 #tree_models.append(("rf", model_rforest))
 #tree_models.append(("xgb", model_xgb))
 
-cross_val_table = pp.get_validation_scores(tree_models, train_set_X, train_set_y, 3)
+cross_val_table = pp.get_validation_scores(tree_models, train_set_X, train_set_y, 5)
 print(cross_val_table)
 
+model_lgb.fit(train_set_X, train_set_y)
+predicted = model_lgb.predict(test_set_X)
+score_val = cvl.score_sq(test_set_y, predicted)
 
 averaged_models = em.AveragingModels(models = [model_lgb, model_rforest])
 
@@ -123,30 +145,15 @@ print(cross_val_table_avg)
 pp.make_submission(model_lgb, train_X_reduced, train_y, test_X_reduced, ids, filename = 'submission.csv')
 
 
-
-
-
-(objective='regression',
-                              metric="rmse",
-                              n_estimators = 500,
-                              num_leaves = 30,
-                              learning_rate = 0.01,
-                              bagging_fraction = 0.7,
-                              feature_fraction = 0.7,
-                              bagging_frequency = 5,
-                              bagging_seed = 2018,
-                              verbosity = -1)
-
-
+from IPython.display import display
 lgbm_params =  {
-    'task': 'train',
     'boosting_type': 'gbdt',
     'objective': 'regression',
     'metric': 'rmse',
     "learning_rate": 0.01,
     "num_leaves": 180,
-    "feature_fraction": 0.50,
-    "bagging_fraction": 0.50,
+    "feature_fraction": 0.70,
+    "bagging_fraction": 0.70,
     'bagging_freq': 4,
     "max_depth": -1,
     "reg_alpha": 0.3,
@@ -164,12 +171,12 @@ lgb_train = lgb.Dataset(train_set_X, train_set_y, feature_name = "auto")
 lgb_cv = lgb.cv(
     params = lgbm_params,
     train_set = lgb_train,
-    num_boost_round=2000,
+    num_boost_round=500,
     stratified=False,
     nfold = 5,
-    verbose_eval=50,
+    verbose_eval=10,
     seed = 23,
-    early_stopping_rounds=75)
+    early_stopping_rounds=100)
 
 results = pd.DataFrame(columns = ["Rounds","Score","STDV", "LB", "Parameters"])
 optimal_rounds = np.argmin(lgb_cv['rmse-mean'])
@@ -183,3 +190,88 @@ results = results.append({"Rounds": optimal_rounds,
                           "STDV": lgb_cv['rmse-stdv'][optimal_rounds],
                           "LB": None,
                           "Parameters": lgbm_params}, ignore_index=True)
+
+pd.set_option('max_colwidth', 800)
+display(results.sort_values(by="Score",ascending = True))
+
+learning_rates = [0.012,0.008]
+for param in learning_rates:
+    print("Learning Rate: ", param)
+    lgbm_params["learning_rate"] = param
+    # Find Optimal Parameters / Boosting Rounds
+    lgb_cv = lgb.cv(
+        params = lgbm_params,
+        train_set = lgb_train,
+        num_boost_round=10000,
+        stratified=False,
+        nfold = 5,
+        verbose_eval=10,
+        seed = 23,
+        early_stopping_rounds=100)
+
+optimal_rounds = np.argmin(lgb_cv['rmse-mean'])
+best_cv_score = min(lgb_cv['rmse-mean'])
+
+print("Optimal Round: {}\nOptimal Score: {} + {}".format(
+        optimal_rounds,best_cv_score,lgb_cv['rmse-stdv'][optimal_rounds]))
+print("###########################################################################################")
+
+results = results.append({"Rounds": optimal_rounds,
+                              "Score": best_cv_score,
+                              "STDV": lgb_cv['rmse-stdv'][optimal_rounds],
+                              "LB": None,
+                              "Parameters": lgbm_params}, ignore_index=True)
+
+
+pd.set_option('max_colwidth', 800)
+display(results.sort_values(by="Score",ascending = True))
+
+
+# Best Parameters
+final_model_params = results.iloc[results["Score"].idxmin(),:]["Parameters"]
+optimal_rounds = results.iloc[results["Score"].idxmin(),:]["Rounds"]
+print("Parameters for Final Models:\n",final_model_params)
+print("Score: {} +/- {}".format(results.iloc[results["Score"].idxmin(),:]["Score"],results.iloc[results["Score"].idxmin(),:]["STDV"]))
+print("Rounds: ", optimal_rounds)
+
+multi_seed_pred = dict()
+all_feature_importance_df  = pd.DataFrame()
+
+
+all_seeds = [27,22,300,401]
+for seeds_x in all_seeds:
+    print("Seed: ", seeds_x,)
+    # Go Go Go
+    final_model_params["seed"] = seeds_x
+    lgb_reg = lgb.train(
+        final_model_params,
+        lgb_train,
+        num_boost_round = int(optimal_rounds + 1),
+        verbose_eval=10)
+
+    multi_seed_pred[seeds_x] =  list(lgb_reg.predict(test_set_X))
+    
+    del lgb_reg
+
+cols = all_feature_importance_df[["feature", "importance"]].groupby("feature").mean().sort_values(
+    by="importance", ascending=False)[:50].index
+best_features = all_feature_importance_df.loc[all_feature_importance_df.feature.isin(cols)]
+
+
+# To DataFrame
+sub_preds = pd.DataFrame.from_dict(multi_seed_pred).replace(0,0.000001)
+
+for i in range(4):
+    score_val = cvl.score_sq(test_set_y, sub_preds.iloc[:,i])
+    print(score_val)
+ms = sub_preds.mean(axis=1).rename("target")
+score_val = cvl.score_sq(test_set_y, ms)
+print(score_val)
+
+mean_sub = np.expm1(sub_preds.mean(axis=1).rename("target"))
+mean_sub.index = ids
+
+# Submit
+mean_sub.to_csv('mean_sub_ep{}_sc{}.csv'.format(optimal_rounds,round(best_cv_score,5))
+            ,index = True, header=True)
+mean_sub.head()
