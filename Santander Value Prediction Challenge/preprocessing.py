@@ -1,8 +1,12 @@
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import KFold, cross_val_score
+from sklearn.model_selection import KFold, cross_val_score, cross_validate
+from sklearn.metrics import mean_squared_error
 
 DATADIR = "input/"
+
+def score_sq(y, y_pred):
+    return(np.sqrt(mean_squared_error(y, y_pred)))
 
 def read_train_test(train_file = 'train.csv', test_file = None):
     train = pd.read_csv(DATADIR + train_file)
@@ -43,4 +47,46 @@ def make_submission(model, X_train, y_train, X_test, ids, filename = 'submission
     predicted = np.expm1(model.predict(X_test))
     my_submission = pd.DataFrame({'ID': ids, 'target': predicted})
     my_submission.to_csv(filename, index=False)
+
+def cross_val_score_model(estimator, X, y, n_folds = 5, scoring_func="neg_mean_squared_error", seed = 2018):
+    kf = KFold(n_folds, shuffle=True, random_state = seed)
+    scores = np.sqrt(-cross_val_score(estimator, X, y, scoring=scoring_func, cv = kf))
+    return(scores)
+
+def cross_validate_model(estimator, X, y, n_folds = 5, scoring_func="neg_mean_squared_error", seed = 2018, return_train_score = False, jobs = -1):
+    kf = KFold(n_folds, shuffle=True, random_state = seed)
+    scores = cross_validate(estimator, X, y, scoring=scoring_func, cv = kf, return_train_score = return_train_score, n_jobs = jobs)
+    return(scores)
+    
+def get_test_score(model, X_test, y_test):
+    predicted = model.predict(X_test)
+    score = score_sq(y_test, predicted)
+    return(score)
+
+def get_cross_validate(medels_list, X, y, folds = 5, seed = 2018, train_score = False, jobs = -1): 
+    sort_by = "Score (mean)"
+    if train_score:
+        results = pd.DataFrame(columns = ["Estimator", "Score (mean)", "Score (std)", "CV Scores",
+                                          "Train Score (mean)", "Train Score (std)", "Train CV Scores"])
+    else:
+        results = pd.DataFrame(columns = ["Estimator", "Score (mean)", "Score (std)", "CV Scores"])
+        
+    for name, model in medels_list:
+        print(name)
+        scores =  cross_validate_model(model, X, y, n_folds = folds, seed = seed, return_train_score = train_score, jobs = jobs)
+        test_score = np.sqrt(-scores["test_score"])
+        record = {"Estimator": name,
+                  "Score (mean)": test_score.mean(),
+                  "Score (std)": test_score.std(),
+                  "CV Scores": test_score}
+        
+        if train_score:
+            train_score = np.sqrt(-scores["train_score"])
+            record["Train Score (mean)"] = train_score.mean()
+            record["Train Score (std)"] = train_score.std()
+            record["Train CV Scores"] = train_score
+        
+        results = results.append(record, ignore_index=True)
+    results.sort_values(by=[sort_by], ascending = True, inplace = True)
+    return results
 
