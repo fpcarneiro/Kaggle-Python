@@ -18,19 +18,19 @@ def get_feature_groups(dataset, drop_list = ['dataset', 'Id']):
     cat_columns = list(mydata.select_dtypes(include=['object']).columns)
     return (num_columns, cat_columns)
 
-def score_model(estimator, X, y, n_folds = 5, scoring_func="neg_mean_squared_error"):
-    kf = KFold(n_folds, shuffle=True)
+def score_model(estimator, X, y, n_folds = 5, seed = 2018, scoring_func="neg_mean_squared_error"):
+    kf = KFold(n_folds, shuffle=True, random_state = seed)
     score = -cross_val_score(estimator, X, y, scoring=scoring_func, cv = kf)
     return(score)
     
-def get_validation_scores(models, X_train, y_train, folds):
+def get_validation_scores(models, X_train, y_train, folds, seed = 2018):
     scores_val_mean = []
     scores_val_std = []
     scores_val = []
     names = []
     for name, model in models:
         names.append(name)
-        val_scores = np.sqrt(score_model(model, X_train, y_train, n_folds = folds))
+        val_scores = np.sqrt(score_model(model, X_train, y_train, n_folds = folds, seed = seed))
         scores_val.append(val_scores)
         scores_val_mean.append(val_scores.mean())
         scores_val_std.append(val_scores.std())
