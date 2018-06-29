@@ -1,16 +1,12 @@
-models = []
-models.append(("lasso", model_lasso))
-models.append(("ridge", model_ridge))
-models.append(("svr", model_svr))
-models.append(("ENet", model_ENet))
-models.append(("KRR", model_KRR))
-models.append(("byr", model_byr))
-models.append(("rforest", model_rforest))
-models.append(("xgb", model_xgb))
-models.append(("GBoost", model_GBoost))
-models.append(("lgb", model_lgb))
-models.append(("lasso_lars", model_lasso_lars))
-models.append(("lsvr", model_lsvr))
+linear_models = []
+linear_models.append(("lasso", model_lasso))
+linear_models.append(("ridge", model_ridge))
+linear_models.append(("svr", model_svr))
+linear_models.append(("ENet", model_ENet))
+linear_models.append(("KRR", model_KRR))
+linear_models.append(("byr", model_byr))
+linear_models.append(("lsvr", model_lsvr))
+linear_models.append(("lasso_lars", model_lasso_lars))
 
 
 import itertools as it
@@ -22,7 +18,7 @@ best_comb = []
 
 for i in range(2, 5):
     print(i)
-    combinations = it.combinations(models,i)
+    combinations = it.combinations(linear_models,i)
     for comb in combinations:
         qtd_comb += 1
         nomes_train = []
