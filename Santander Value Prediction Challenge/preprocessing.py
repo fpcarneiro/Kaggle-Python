@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import KFold, cross_val_score, cross_validate
+from sklearn.model_selection import KFold, cross_val_score
+from sklearn.model_selection import cross_validate
 from sklearn.metrics import mean_squared_error
 
 DATADIR = "input/"
@@ -16,7 +17,7 @@ def read_train_test(train_file = 'train.csv', test_file = None):
     else:
         return train
 
-def get_feature_groups(dataset, drop_list = ['dataset', 'Id']):
+def get_feature_groups(dataset, drop_list = []):
     mydata = dataset.drop(drop_list, axis=1)
     num_columns = list(mydata.select_dtypes(exclude=['object']).columns)
     cat_columns = list(mydata.select_dtypes(include=['object']).columns)

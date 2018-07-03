@@ -1,11 +1,15 @@
 import preprocessing as pp
 import ensemble as em
 import transformers as tf
+import regressors as reg
 import cv_lab as cvl
 import feature_selection as fs
 
 import pandas as pd
 import numpy as np
+
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.decomposition import PCA
 
 from sklearn.preprocessing import RobustScaler, FunctionTransformer, StandardScaler
 from sklearn.feature_selection import VarianceThreshold, SelectKBest, f_regression
@@ -22,9 +26,49 @@ from xgboost import XGBRegressor
 import warnings
 def ignore_warn(*args, **kwargs):
     pass
-warnings.warn = ignore_warn #ignore annoying warning (from sklearn and seaborn)
+warnings.warn = ignore_warn
+
+def get_rfc():
+    return RandomForestClassifier(
+        n_estimators=1000,
+        max_features=0.5,
+        max_depth=None,
+        max_leaf_nodes=270,
+        min_impurity_decrease=0.0001,
+        random_state=123,
+        n_jobs=-1
+    )
+    
+xgb_params = {
+        'n_estimators': 1500,
+        'objective': 'reg:linear',
+        'booster': 'gbtree',
+        'learning_rate': 0.02,
+        'max_depth': 22,
+        'min_child_weight': 57,
+        'gamma' : 1.45,
+        'alpha': 0.0,
+        'lambda': 0.0,
+        'subsample': 0.67,
+        'colsample_bytree': 0.054,
+        'colsample_bylevel': 0.50,
+        'n_jobs': -1,
+        'random_state': 456
+    }
+    
+fit_params = {
+        'early_stopping_rounds': 15,
+        'eval_metric': 'rmse',
+        'verbose': False
+    }
 
 train, test = pp.read_train_test(train_file = 'train.csv', test_file = 'test.csv')
+
+#train_sparse = train.replace(0, np.nan).to_sparse()
+#test_sparse = test.replace(0, np.nan).to_sparse()
+
+#train_X_sparse = train_sparse.drop(['ID','target'], axis=1)
+#train_y_sparse = (np.log1p(train_sparse.target)).values
 
 ids = list(test.ID)
 
@@ -33,27 +77,33 @@ train_y = (np.log1p(train.target)).values
 
 test_X = test.drop(['ID'], axis=1)
 
-threshold = .98 * (1 - .98)
-variance = VarianceThreshold(threshold)
+pipe = Pipeline(
+        [
+            ('vt', VarianceThreshold(threshold=0.0)),
+            ('ut', tf.UniqueTransformer()),
+            ('fu', FeatureUnion(
+                    [
+                        ('pca', PCA(n_components=100)),
+                        ('ct-2', tf.ClassifierTransformer(get_rfc(), n_classes=2, cv=5)),
+                        ('ct-3', tf.ClassifierTransformer(get_rfc(), n_classes=3, cv=5)),
+                        ('ct-4', tf.ClassifierTransformer(get_rfc(), n_classes=4, cv=5)),
+                        ('ct-5', tf.ClassifierTransformer(get_rfc(), n_classes=5, cv=5)),
+                        ('st', tf.StatsTransformer(stat_funs=tf.get_stat_funs()))
+                    ]
+                )
+            ),
+            ('xgb-cv', reg.XGBRegressorCV(
+                    xgb_params=xgb_params,
+                    fit_params=fit_params,
+                    cv=10
+                )
+            )
+        ]
+    )
 
-importances = fs.get_feature_importance(RandomForestRegressor(n_jobs = -1, random_state = 7), train_X, train_y)
-fs.plot_features_importances(importances[:600], show_importance_zero = False)
-
-from_model = SelectFromModel(RandomForestRegressor(n_jobs = -1, random_state = 7), threshold = 0.000375)
-from_model.fit(train_X, train_y)
-
-estimators = []
-#estimators.append(('binarizer', binarizer))
-estimators.append(('low_variance', variance))
-#estimators.append(('scaler', scaler))
-#estimators.append(('anova', anova_filter))
-#estimators.append(('log_transform', log_transformer))
-#estimators.append(('percentile', percentile))
-estimators.append(('from_model', from_model))
-#estimators.append(('feature_selection', feature_selection_union))
-
-pipe = Pipeline(estimators)
 pipe.fit(train_X, train_y)
+print(pipe.named_steps['xgb-cv'].cv_scores_)
+print(pipe.named_steps['xgb-cv'].cv_score_)
 
 train_X_reduced = pipe.transform(train_X)
 test_X_reduced = pipe.transform(test_X)
@@ -65,10 +115,9 @@ train_set_X, test_set_X, train_set_y, test_set_y = train_test_split(train_X_redu
 
 train_set_X.shape
 
-
-
 tree_models = []
-for s in [27,22,300,401]:
+models = []
+for s in [27,22,300,401,7]:
     model_lgb = lgb.LGBMRegressor(boosting_type = 'gbdt',
                               num_leaves = 200,
                               max_depth = -1,
@@ -101,15 +150,17 @@ for s in [27,22,300,401]:
     tree_models.append(("lgb_" + str(s), model_lgb))
     #tree_models.append(("rf", model_rforest))
     #tree_models.append(("xgb", model_xgb))
+    models.append(model_lgb)
 
-tree_results = pp.get_cross_validate(tree_models, train_set_X, train_set_y.ravel(), folds = 10, seed = 2018, train_score = False, jobs = 3)
+tree_results = pp.get_cross_validate(tree_models, train_set_X, train_set_y, 
+                                     folds = 10, seed = 2018, train_score = False, jobs = -1)
 print(tree_results)
 
 model_lgb.fit(train_set_X, train_set_y)
 predicted = model_lgb.predict(test_set_X)
 score_val = cvl.score_sq(test_set_y, predicted)
 
-averaged_models = em.AveragingModels(models = [model_lgb, model_rforest])
+averaged_models = em.AveragingModels(models = models)
 
 ensemble_models = []
 ensemble_models.append(("averaged", averaged_models))
@@ -117,7 +168,8 @@ ensemble_models.append(("averaged", averaged_models))
 cross_val_table_avg = pp.get_validation_scores(ensemble_models, train_X_reduced, train_y, 5)
 print(cross_val_table_avg)
 
-pp.make_submission(model_lgb, train_X_reduced, train_y, test_X_reduced, ids, filename = 'submission.csv')
+pp.make_submission(averaged_models, train_X_reduced, train_y, 
+                   test_X_reduced, ids, filename = 'submission.csv')
 
 
 lgbm_params =  {
@@ -266,3 +318,18 @@ pca_results_test = pca.transform(test_X_reduced)
 tsvd = TruncatedSVD(n_components=N_COMP, random_state=17)
 tsvd_results_train = tsvd.fit_transform(train_X_reduced)
 tsvd_results_test = tsvd.transform(test_X_reduced)
+
+
+
+
+for i_class in range(3):
+    if i_class + 1 == 3:
+        y_labels[a >= y_us[i_class * step]] = i_class
+    else:
+        y_labels[
+            np.logical_and(
+                a >= y_us[i_class * step],
+                a < y_us[(i_class + 1) * step]
+            )
+        ] = i_class
+print (y_labels)
