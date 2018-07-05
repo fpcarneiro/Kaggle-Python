@@ -15,35 +15,6 @@ from sklearn.preprocessing import RobustScaler
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-def get_validation_scores(models, X_train, y_train, X_test = [], y_test = []):
-    scores_val_mean = []
-    scores_val_std = []
-    scores_val = []
-    scores_test = []
-    names = []
-    for name, model in models:
-        names.append(name)
-        val_scores = np.sqrt(pp.score_model(model, X_train, y_train, n_folds = 10))
-        scores_val.append(val_scores)
-        scores_val_mean.append(val_scores.mean())
-        scores_val_std.append(val_scores.std())
-        if len(X_test) != 0:
-            model.fit(X_train, y_train)
-            st = get_test_scores(model, X_test, y_test)
-            scores_test.append(st)
-    if len(X_test) != 0:
-        tab = pd.DataFrame({ "Model" : names, "Cross Validation (Mean)" : scores_val_mean, "Cross Validation (Std)" : scores_val_std, "Cross Validation (Scores)" : scores_val, "Test": scores_test })
-        tab.sort_values(by=['Test'], ascending = True, inplace = True)
-    else:
-        tab = pd.DataFrame({ "Model" : names, "Cross Validation (Mean)" : scores_val_mean, "Cross Validation (Std)" : scores_val_std, "Cross Validation (Scores)" : scores_val })
-        tab.sort_values(by=['Cross Validation (Mean)'], ascending = True, inplace = True)
-    return(tab)
-
-def get_test_scores(model, X_test, y_test):
-    predicted = model.predict(X_test)
-    score = score_sq(y_test, predicted)
-    return(score)
-
 def make_submission(model, X_train, y_train, X_test, filename = 'submission.csv'):
     model.fit(X_train, y_train)
     predicted = np.expm1(model.predict(X_test))
@@ -78,7 +49,7 @@ basic_pipeline = Pipeline([('convert', tr.Numeric2CategoryTransformer(["MSSubCla
 train = basic_pipeline.fit_transform(train)
 test = basic_pipeline.fit_transform(test)
 
-log_transformation = tr.LogTransformer(threshold = 0.75)
+log_transformation = tr.LogTransformer(threshold = 0.5)
 log_transformation.fit(train)
 train = log_transformation.fit_transform(train)
 test = log_transformation.transform(test)
@@ -98,10 +69,10 @@ features_variance = fs.list_features_low_variance(train, train_y, .98)
 train_X = train[features_variance]
 test_X = test[features_variance]
 
-importances = fs.get_feature_importance(Lasso(alpha=0.0005), train_X, train_y)
+importances = fs.get_feature_importance(Lasso(alpha=0.0006), train_X, train_y)
 fs.plot_features_importances(importances, show_importance_zero = False)
 
-features_select_from_model, pipe_select_from_model = fs.remove_features_from_model(estimator = Lasso(alpha=0.0005), 
+features_select_from_model, pipe_select_from_model = fs.remove_features_from_model(estimator = Lasso(alpha=0.0006), 
                                                           scaler = RobustScaler(), X = train_X, y = train_y)
 train_X_reduced = pipe_select_from_model.transform(train_X)
 test_X_reduced = pipe_select_from_model.transform(test_X)
@@ -110,6 +81,8 @@ X_train, X_test, y_train, y_test = train_test_split(train_X_reduced, train_y, te
 
 ##################
 seed = 2018
+np.set_printoptions(precision = 4)
+pd.set_option('precision', 4)
 
 model_ridge = Ridge(alpha=12.0, random_state=seed)
 model_KRR = KernelRidge(alpha=0.7, kernel='polynomial', degree=2, coef0=2.0, gamma=0.00366)
@@ -162,14 +135,22 @@ tree_models.append(("GBoost", model_GBoost))
 tree_models.append(("xgb", model_xgb))
 tree_models.append(("lgb", model_lgb))
 
-cross_val_table = get_validation_scores(linear_models, X_train, y_train, X_test, y_test)
-print(cross_val_table)
+linear_results = pp.get_cross_validate(linear_models, X_train, y_train.ravel(), 
+                                       folds = 10, seed = seed, train_score = False, jobs = 2)
+print(linear_results)
 
-linear_cross_val_table = get_validation_scores(linear_models, train_X_reduced, train_y)
-print(linear_cross_val_table)
+linear_results_val = pp.get_cross_validate(linear_models, train_X_reduced, train_y.ravel(), 
+                                       folds = 10, seed = seed, train_score = False, jobs = 2)
+print(linear_results_val)
 
-tree_cross_val_table = get_validation_scores(tree_models, train_X_reduced, train_y)
-print(tree_cross_val_table)
+
+tree_results = pp.get_cross_validate(tree_models, X_train, y_train.ravel(), 
+                                     folds = 10, seed = seed, train_score = False)
+print(tree_results)
+
+tree_results_val = pp.get_cross_validate(tree_models, train_X_reduced, train_y.ravel(), 
+                                     folds = 10, seed = seed, train_score = False)
+print(tree_results_val)
 
 averaged_models = em.AveragingModels(models = [model_lgb, model_KRR, model_ridge, model_lsvr])
 stacked_averaged_models = em.StackingAveragedModels(base_models = [model_KRR, model_lsvr, model_lgb], meta_model = model_ridge)
@@ -197,11 +178,3 @@ make_submission(averaged_models, train_X_reduced, train_y, test_X_reduced, filen
 make_submission(averaged_plus_plus, train_X_reduced, train_y, test_X_reduced, filename = 'submission_avg_plus_plus.csv')
 
 make_submission(avg_full, train_X_reduced, train_y, test_X_reduced, filename = 'submission_avg_full.csv')
-
-
-
-
-
-
-
-import featuretools as ft
