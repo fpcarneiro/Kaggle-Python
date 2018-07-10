@@ -41,10 +41,10 @@ train.drop(['SalePrice'], axis=1, inplace = True)
 
 basic_pipeline = Pipeline([('convert', tr.Numeric2CategoryTransformer(["MSSubClass", "MoSold"])),
                  ('missing', tr.HandleMissingTransformer()),
-                 ('more_features', tr.MoreFeaturesTransformer()),
-                 ('encode_features', tr.EncodeTransformer()),
+                 #('more_features', tr.MoreFeaturesTransformer()),
+                 #('encode_features', tr.EncodeTransformer()),
                  ('date_related_features', tr.DateRelatedFeaturesTransformer()),
-                 ('neighbourhood_features', tr.NeighbourhoodRelatedFeaturesTransformer()),
+                 #('neighbourhood_features', tr.NeighbourhoodRelatedFeaturesTransformer()),
                  ])
 
 train = basic_pipeline.fit_transform(train)
@@ -145,8 +145,8 @@ tree_results = pp.get_cross_validate(tree_models, train_X_reduced, train_y.ravel
                                      folds = 10, seed = seed, train_score = False)
 print(tree_results)
 
-averaged_models = em.AveragingModels(models = [model_lgb, model_KRR, model_ridge, model_lsvr])
-stacked_averaged_models = em.StackingAveragedModels(base_models = [model_KRR, model_lsvr, model_lgb], meta_model = model_ridge)
+averaged_models = em.AveragingModels(models = [model_lgb, model_KRR, model_svr])
+stacked_averaged_models = em.StackingAveragedModels(base_models = [model_ridge, model_svr, model_lgb], meta_model = model_KRR)
 averaged_plus = em.AveragingModels(models = [averaged_models, model_GBoost, model_xgb], weights = [0.7, 0.2, 0.1])
 averaged_plus_plus = em.AveragingModels(models = [stacked_averaged_models, model_GBoost, model_xgb], weights = [0.7, 0.2, 0.1])
 
@@ -160,18 +160,11 @@ ensemble_models.append(("averaged_plus", averaged_plus))
 ensemble_models.append(("averaged_plus_plus", averaged_plus_plus))
 ensemble_models.append(("averaged_full", avg_full))
 
-cross_val_table_ensemble = get_validation_scores(ensemble_models, X_train, y_train, X_test, y_test)
-print(cross_val_table_ensemble)
+ensemble_results = pp.get_cross_validate(ensemble_models, train_X_reduced, train_y.ravel(), 
+                                     folds = 10, seed = seed, train_score = False)
+print(ensemble_results)
 
-cross_val_table_ensemble = get_validation_scores(ensemble_models, train_X_reduced, train_y)
-print(cross_val_table_ensemble)
-
-make_submission(averaged_plus, train_X_reduced, train_y, test_X_reduced, filename = 'submission_avg_plus.csv')
 make_submission(averaged_models, train_X_reduced, train_y, test_X_reduced, filename = 'submission_avg.csv')
-make_submission(averaged_plus_plus, train_X_reduced, train_y, test_X_reduced, filename = 'submission_avg_plus_plus.csv')
-
-make_submission(avg_full, train_X_reduced, train_y, test_X_reduced, filename = 'submission_avg_full.csv')
-
 
 
 import cv_lab as cvl

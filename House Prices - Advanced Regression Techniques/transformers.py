@@ -18,11 +18,10 @@ finished_scale = {"No" : 0, "Unf" : 1, "RFn" : 2, "Fin" : 3}
 def add_date_related_features(X):
     X['Age'] = X['YrSold'] - X['YearBuilt']
     X.loc[X.YearBuilt > X.YrSold, "Age"] = 0
-    X.loc[:, "VeryNewHouse"] = (X.loc[:, "YearBuilt"] == X.loc[:,"YrSold"]) * 1
     X['RemodeledAge'] = X['YrSold'] - X['YearRemodAdd']
     X.loc[X.YearRemodAdd > X.YrSold, "RemodeledAge"] = 0
-    X.loc[:, "Remodeled"] = (X.loc[:, "YearRemodAdd"] != X.loc[:,"YearBuilt"]) * 1
-    X.loc[:, "RecentRemodel"] = (X.loc[:, "YearRemodAdd"] == X.loc[:,"YrSold"]) * 1
+    X['GarageAge'] = X['YrSold'] - X['GarageYrBlt']
+    X.loc[X.GarageYrBlt > X.YrSold, "GarageAge"] = 0
     X.loc[:, "IsHighSeason"] = (X.loc[:, "MoSold"].isin(["5", "6", "7"])) * 1
     return X
 
