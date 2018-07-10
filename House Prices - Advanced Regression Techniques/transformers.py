@@ -175,6 +175,7 @@ def add_engineered_features(X):
     X['1stFlrFrac'] = X['1stFlrSF'] / X['GrLivArea']
     X['2ndFlrFrac'] = X['2ndFlrSF'] / X['GrLivArea']
     X['TotalAreaSF'] = X['GrLivArea'] + X['TotalBsmtSF'] + X['GarageArea'] + X['EnclosedPorch']+X['ScreenPorch']
+    
     #X['LivingAreaSF'] = X['1stFlrSF'] + X['2ndFlrSF'] + X['BsmtGLQSF'] + X['BsmtALQSF'] + X['BsmtBLQSF']
     #X['StorageAreaSF'] = X['LowQualFinSF'] + X['BsmtRecSF'] + X['BsmtLwQSF'] + X['BsmtUnfSF'] + X['GarageArea']
     return X

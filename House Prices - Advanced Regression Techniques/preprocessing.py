@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from scipy.stats import skew
-from sklearn.model_selection import KFold, cross_val_score, cross_validate
+from sklearn.model_selection import KFold, RepeatedKFold, cross_val_score, cross_validate
 import seaborn as sns
 import matplotlib.pyplot as plt
 
@@ -325,13 +325,16 @@ def add_features_neighborhood(dataset):
     #dataset["Neighborhood_SalePrice_by_SF"] = dataset.groupby("Neighborhood")["SalePrice"].transform(lambda x: x.mean())
     #train.groupby("Neighborhood")["SalePrice"].agg(aggregations)
 
-def cross_validate_model(estimator, X, y, n_folds = 5, scoring_func="neg_mean_squared_error", 
+def cross_validate_model(estimator, X, y, n_folds = 5, repetitions = 1, scoring_func="neg_mean_squared_error", 
                          seed = 2018, return_train_score = False, jobs = -1):
-    kf = KFold(n_folds, shuffle=True, random_state = seed)
+    if repetitions == 1:
+        kf = KFold(n_splits = n_folds, shuffle=True, random_state = seed)
+    else:
+        kf = RepeatedKFold(n_splits = n_folds, n_repeats = repetitions, random_state = seed)
     scores = cross_validate(estimator, X, y, scoring=scoring_func, cv = kf, return_train_score = return_train_score, n_jobs = jobs)
     return(scores)
 
-def get_cross_validate(medels_list, X, y, folds = 5, seed = 2018, train_score = False, jobs = -1): 
+def get_cross_validate(medels_list, X, y, folds = 5, repetitions = 1, seed = 2018, train_score = False, jobs = -1): 
     sort_by = "Score (mean)"
     if train_score:
         results = pd.DataFrame(columns = ["Estimator", "Score (mean)", "Score (std)", "CV Scores",
@@ -340,7 +343,8 @@ def get_cross_validate(medels_list, X, y, folds = 5, seed = 2018, train_score = 
         results = pd.DataFrame(columns = ["Estimator", "Score (mean)", "Score (std)", "CV Scores"])
         
     for name, model in medels_list:
-        scores =  cross_validate_model(model, X, y, n_folds = folds, seed = seed, return_train_score = train_score, jobs = jobs)
+        scores =  cross_validate_model(model, X, y, n_folds = folds, repetitions = repetitions, seed = seed, 
+                                       return_train_score = train_score, jobs = jobs)
         test_score = np.sqrt(-scores["test_score"])
         record = {"Estimator": name,
                   "Score (mean)": test_score.mean(),
@@ -356,6 +360,13 @@ def get_cross_validate(medels_list, X, y, folds = 5, seed = 2018, train_score = 
         results = results.append(record, ignore_index=True)
     results.sort_values(by=[sort_by], ascending = True, inplace = True)
     return results
+
+def get_splits_year(dataset, column):
+    vc = list(dataset[column].value_counts(sort=False).index.values)
+    for year in vc[:-1]:
+        train_index = dataset[dataset[column] <= year].index.values
+        test_index = dataset[dataset[column] > year].index.values
+        yield (train_index, test_index)
 
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 def get_processed_datasets():

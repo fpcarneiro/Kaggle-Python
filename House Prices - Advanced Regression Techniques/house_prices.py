@@ -30,7 +30,7 @@ train, test = pp.read_train_test()
 
 ids = list(test.Id)
 
-train = pp.drop_outliers(train)
+train = pp.drop_outliers(train).reset_index()
 
 train.drop(['Id'], axis=1, inplace = True)
 test.drop(['Id'], axis=1, inplace = True)
@@ -47,28 +47,28 @@ basic_pipeline = Pipeline([('convert', tr.Numeric2CategoryTransformer(["MSSubCla
                  #('neighbourhood_features', tr.NeighbourhoodRelatedFeaturesTransformer()),
                  ])
 
-train = basic_pipeline.fit_transform(train)
-test = basic_pipeline.fit_transform(test)
+train_X = basic_pipeline.fit_transform(train)
+test_X = basic_pipeline.fit_transform(test)
 
 log_transformation = tr.LogTransformer(threshold = 0.5)
-log_transformation.fit(train)
-train = log_transformation.fit_transform(train)
-test = log_transformation.transform(test)
+log_transformation.fit(train_X)
+train_X = log_transformation.fit_transform(train_X)
+test_X = log_transformation.transform(test_X)
 
 second_pipeline = Pipeline([
                  #('have_stuff_features', tr.HaveStuffTransformer()),
                  ('hot_encode', tr.HotEncodeTransformer()),
                  ])
 
-train = second_pipeline.fit_transform(train)
-test = second_pipeline.fit_transform(test)
+train_X = second_pipeline.fit_transform(train_X)
+test_X = second_pipeline.fit_transform(test_X)
 
-train, test = train.align(test,join='outer', axis=1, fill_value = 0)
+train_X, test_X = train_X.align(test_X, join='outer', axis=1, fill_value = 0)
 
-features_variance = fs.list_features_low_variance(train, train_y, .98)
+features_variance = fs.list_features_low_variance(train_X, train_y, .98)
 
-train_X = train[features_variance]
-test_X = test[features_variance]
+train_X = train_X[features_variance]
+test_X = test_X[features_variance]
 
 importances = fs.get_feature_importance(Lasso(alpha=0.0006), train_X, train_y)
 fs.plot_features_importances(importances, show_importance_zero = False)
@@ -137,7 +137,7 @@ tree_models.append(("xgb", model_xgb))
 tree_models.append(("lgb", model_lgb))
 
 linear_results = pp.get_cross_validate(linear_models, train_X_reduced, train_y.ravel(), 
-                                       folds = 10, seed = seed, train_score = False, jobs = 2)
+                                       folds = 10, repetitions = 2, seed = seed, train_score = False, jobs = 2)
 print(linear_results)
 
 
