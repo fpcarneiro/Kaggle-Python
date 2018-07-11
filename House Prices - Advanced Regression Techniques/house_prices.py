@@ -2,7 +2,7 @@ import preprocessing as pp
 import transformers as tr
 import ensemble as em
 from cv_lab import score_sq
-from sklearn.pipeline import Pipeline
+from sklearn.pipeline import Pipeline, FeatureUnion
 import feature_selection as fs
 import numpy as np
 from sklearn.kernel_ridge import KernelRidge
@@ -14,6 +14,8 @@ from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, E
 from sklearn.preprocessing import RobustScaler
 import pandas as pd
 from sklearn.model_selection import train_test_split
+from sklearn.feature_selection import VarianceThreshold, SelectFromModel
+from sklearn.decomposition import PCA
 
 def make_submission(model, X_train, y_train, X_test, filename = 'submission.csv'):
     model.fit(X_train, y_train)
@@ -25,6 +27,8 @@ import warnings
 def ignore_warn(*args, **kwargs):
     pass
 warnings.warn = ignore_warn #ignore annoying warning (from sklearn and seaborn)
+
+seed = 2018
 
 train, test = pp.read_train_test()
 
@@ -41,13 +45,13 @@ train.drop(['SalePrice'], axis=1, inplace = True)
 
 basic_pipeline = Pipeline([('convert', tr.Numeric2CategoryTransformer(["MSSubClass", "MoSold"])),
                  ('missing', tr.HandleMissingTransformer()),
+                 ('date_related_features', tr.DateRelatedFeaturesTransformer()),
                  #('more_features', tr.MoreFeaturesTransformer()),
                  #('encode_features', tr.EncodeTransformer()),
-                 ('date_related_features', tr.DateRelatedFeaturesTransformer()),
                  #('neighbourhood_features', tr.NeighbourhoodRelatedFeaturesTransformer()),
                  ])
 
-train_X = basic_pipeline.fit_transform(train)
+train_X = basic_pipeline.fit_transform(train, train_y)
 test_X = basic_pipeline.fit_transform(test)
 
 log_transformation = tr.LogTransformer(threshold = 0.5)
@@ -60,28 +64,28 @@ second_pipeline = Pipeline([
                  ('hot_encode', tr.HotEncodeTransformer()),
                  ])
 
-train_X = second_pipeline.fit_transform(train_X)
+train_X = second_pipeline.fit_transform(train_X, train_y)
 test_X = second_pipeline.fit_transform(test_X)
 
 train_X, test_X = train_X.align(test_X, join='outer', axis=1, fill_value = 0)
 
-features_variance = fs.list_features_low_variance(train_X, train_y, .98)
+third_pipeline = Pipeline([('scaler', RobustScaler()),
+                           ('low_variance', VarianceThreshold(0.98 * (1 - 0.98))),
+                           ('fu', FeatureUnion([
+                                   #('pca', PCA(n_components=10)),
+                                   ('reduce_dim_lasso', SelectFromModel(Lasso(alpha=0.0004, random_state = seed))),
+                                   #('reduce_dim_rf', SelectFromModel(RandomForestRegressor(n_estimators = 150, 
+                                   #                                                     max_features = 0.4, random_state = seed), threshold = "mean")),
+                                   ])),
+                           ])
 
-train_X = train_X[features_variance]
-test_X = test_X[features_variance]
-
-importances = fs.get_feature_importance(Lasso(alpha=0.0006), train_X, train_y)
-fs.plot_features_importances(importances, show_importance_zero = False)
-
-features_select_from_model, pipe_select_from_model = fs.remove_features_from_model(estimator = Lasso(alpha=0.0006), 
-                                                          scaler = RobustScaler(), X = train_X, y = train_y)
-train_X_reduced = pipe_select_from_model.transform(train_X)
-test_X_reduced = pipe_select_from_model.transform(test_X)
+train_X_reduced = third_pipeline.fit_transform(train_X, train_y)
+test_X_reduced = third_pipeline.transform(test_X)
 
 X_train, X_test, y_train, y_test = train_test_split(train_X_reduced, train_y, test_size=0.2)
 
 ##################
-seed = 2018
+
 np.set_printoptions(precision = 4)
 pd.set_option('precision', 4)
 
@@ -137,7 +141,7 @@ tree_models.append(("xgb", model_xgb))
 tree_models.append(("lgb", model_lgb))
 
 linear_results = pp.get_cross_validate(linear_models, train_X_reduced, train_y.ravel(), 
-                                       folds = 10, repetitions = 2, seed = seed, train_score = False, jobs = 2)
+                                       folds = 10, repetitions = 3, seed = seed, train_score = False, jobs = 2)
 print(linear_results)
 
 
@@ -146,7 +150,7 @@ tree_results = pp.get_cross_validate(tree_models, train_X_reduced, train_y.ravel
 print(tree_results)
 
 averaged_models = em.AveragingModels(models = [model_lgb, model_KRR, model_svr])
-stacked_averaged_models = em.StackingAveragedModels(base_models = [model_ridge, model_svr, model_lgb], meta_model = model_KRR)
+stacked_averaged_models = em.StackingAveragedModels(base_models = [model_svr, model_lgb], meta_model = model_KRR)
 averaged_plus = em.AveragingModels(models = [averaged_models, model_GBoost, model_xgb], weights = [0.7, 0.2, 0.1])
 averaged_plus_plus = em.AveragingModels(models = [stacked_averaged_models, model_GBoost, model_xgb], weights = [0.7, 0.2, 0.1])
 
@@ -161,7 +165,7 @@ ensemble_models.append(("averaged_plus_plus", averaged_plus_plus))
 ensemble_models.append(("averaged_full", avg_full))
 
 ensemble_results = pp.get_cross_validate(ensemble_models, train_X_reduced, train_y.ravel(), 
-                                     folds = 10, seed = seed, train_score = False)
+                                     folds = 10, repetitions = 1, seed = seed, train_score = False)
 print(ensemble_results)
 
 make_submission(averaged_models, train_X_reduced, train_y, test_X_reduced, filename = 'submission_avg.csv')

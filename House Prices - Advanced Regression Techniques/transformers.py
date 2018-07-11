@@ -40,9 +40,9 @@ def convert_numeric2category(X, columns = ["MSSubClass", "MoSold"]):
 def more_features(X):
     X.loc[:, "IsRegularLotShape"] = (X.loc[:, "LotShape"] == "Reg") * 1
     X.loc[:, "IsLandLevel"] = (X.loc[:, "LandContour"] == "Lvl") * 1
-    X.loc[:, "IsLandSlopeGentle"] = (X.loc[:, "LandSlope"] == "Gtl") * 1       
-    X.loc[:, "IsElectricalSBrkr"] = (X.loc[:, "Electrical"] == "SBrkr") * 1
-    X.loc[:, "IsGarageDetached"] = (X.loc[:, "GarageType"] == "Detchd") * 1
+    #X.loc[:, "IsLandSlopeGentle"] = (X.loc[:, "LandSlope"] == "Gtl") * 1       
+    #X.loc[:, "IsElectricalSBrkr"] = (X.loc[:, "Electrical"] == "SBrkr") * 1
+    #X.loc[:, "IsGarageDetached"] = (X.loc[:, "GarageType"] == "Detchd") * 1
     X.loc[:, "IsPavedDrive"] = (X.loc[:, "PavedDrive"] == "Y") * 1    
     return X
 
@@ -112,7 +112,7 @@ def encode(X):
     cols_quality = ["BsmtCond", "BsmtQual", "ExterCond", "ExterQual", "FireplaceQu", "GarageCond", "GarageQual",
                     "HeatingQC", "KitchenQual", "PoolQC"]
 
-    scales = [quality_scale] * len (cols_quality)
+    scales = [quality_scale] * len(cols_quality)
     
     return encode_features(X, cols_quality, scales)
 
