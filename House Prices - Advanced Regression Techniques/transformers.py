@@ -52,7 +52,7 @@ def add_columns_was_missing(X):
     for col in cols_with_missing:
         new_col = col + '_was_missing'
         new_columns.append(new_col)
-        X[new_col] = X[col].isnull()
+        X[new_col] = X[col].isnull().astype(int)
     return X
 
 def handle_missing(X, add_was_missing_columns = False):
@@ -109,8 +109,10 @@ def encode(X):
 #              quality_scale, quality_scale, slope_scale, shape_scale, paved_scale, quality_scale, access_scale, 
 #              utilities_scale, air_scale]
     
-    cols_quality = ["BsmtCond", "BsmtQual", "ExterCond", "ExterQual", "FireplaceQu", "GarageCond", "GarageQual",
-                    "HeatingQC", "KitchenQual", "PoolQC"]
+    #cols_quality = ["BsmtCond", "BsmtQual", "ExterCond", "ExterQual", "FireplaceQu", "GarageCond", "GarageQual",
+    #                "HeatingQC", "KitchenQual", "PoolQC"]
+    
+    cols_quality = ["GarageCond", "GarageQual", "ExterCond", "ExterQual", "BsmtCond", "BsmtQual"]
 
     scales = [quality_scale] * len(cols_quality)
     
@@ -158,22 +160,23 @@ def shrink_scales(X, prefix = ""):
 
 def add_engineered_features(X):
     X["OverallGrade"] = X["OverallQual"] * X["OverallCond"]
-    X["GarageGrade"] = X["GarageQual"] * X["GarageCond"]
-    X["ExterGrade"] = X["ExterQual"] * X["ExterCond"]
-    X["KitchenScore"] = X["KitchenAbvGr"] * X["KitchenQual"]
-    X["FireplaceScore"] = X["Fireplaces"] * X["FireplaceQu"]
-    X["GarageScore"] = X["GarageArea"] * X["GarageQual"]
-    X["PoolScore"] = X["PoolArea"] * X["PoolQC"]
-    X["TotalBath"] = X["BsmtFullBath"] + (0.5 * X["BsmtHalfBath"]) + X["FullBath"] + (0.5 * X["HalfBath"])
+    #X["GarageGrade"] = X["GarageQual"] * X["GarageCond"]
+    #X["ExterGrade"] = X["ExterQual"] * X["ExterCond"]
+    #X["BsmtGrade"] = X["BsmtQual"] * X["BsmtCond"]
+    #X["KitchenScore"] = X["KitchenAbvGr"] * X["KitchenQual"]
+    #X["FireplaceScore"] = X["Fireplaces"] * X["FireplaceQu"]
+    #X["GarageScore"] = X["GarageArea"] * X["GarageQual"]
+    #X["PoolScore"] = X["PoolArea"] * X["PoolQC"]
+    #X["TotalBath"] = X["BsmtFullBath"] + (0.5 * X["BsmtHalfBath"]) + X["FullBath"] + (0.5 * X["HalfBath"])
     X["AllSF"] = X["GrLivArea"] + X["TotalBsmtSF"]
     X["AllFlrsSF"] = X["1stFlrSF"] + X["2ndFlrSF"]
     X["AllPorchSF"] = X["OpenPorchSF"] + X["EnclosedPorch"] + X["3SsnPorch"] + X["ScreenPorch"]
-    X["HasMasVnr"] = X.MasVnrType.replace({"BrkCmn" : 1, "BrkFace" : 1, "CBlock" : 1, "Stone" : 1, "None" : 0})
-    X["BoughtOffPlan"] = X.SaleCondition.replace({"Abnorml" : 0, "Alloca" : 0, "AdjLand" : 0, "Family" : 0, "Normal" : 0, "Partial" : 1})
+    #X["HasMasVnr"] = X.MasVnrType.replace({"BrkCmn" : 1, "BrkFace" : 1, "CBlock" : 1, "Stone" : 1, "None" : 0})
+    #X["BoughtOffPlan"] = X.SaleCondition.replace({"Abnorml" : 0, "Alloca" : 0, "AdjLand" : 0, "Family" : 0, "Normal" : 0, "Partial" : 1})
     X['TotalSF'] = X['TotalBsmtSF'] + X['1stFlrSF'] + X['2ndFlrSF']
     X['LowQualFinFrac'] = X['LowQualFinSF'] / X['GrLivArea']
-    X['1stFlrFrac'] = X['1stFlrSF'] / X['GrLivArea']
-    X['2ndFlrFrac'] = X['2ndFlrSF'] / X['GrLivArea']
+    #X['1stFlrFrac'] = X['1stFlrSF'] / X['GrLivArea']
+    #X['2ndFlrFrac'] = X['2ndFlrSF'] / X['GrLivArea']
     X['TotalAreaSF'] = X['GrLivArea'] + X['TotalBsmtSF'] + X['GarageArea'] + X['EnclosedPorch']+X['ScreenPorch']
     
     #X['LivingAreaSF'] = X['1stFlrSF'] + X['2ndFlrSF'] + X['BsmtGLQSF'] + X['BsmtALQSF'] + X['BsmtBLQSF']
@@ -287,11 +290,11 @@ class Numeric2CategoryTransformer(BaseEstimator, TransformerMixin):
         return self
 
 class HandleMissingTransformer(BaseEstimator, TransformerMixin):
-    def __init__(self):
-        pass
+    def __init__(self, was_missing_features = False):
+        self.was_missing_features = was_missing_features
 
     def transform(self, X, y=None):
-        return handle_missing(X)
+        return handle_missing(X, self.was_missing_features)
 
     def fit(self, X, y=None):
         return self

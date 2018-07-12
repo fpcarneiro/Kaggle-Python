@@ -12,7 +12,7 @@ from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.preprocessing import RobustScaler
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.feature_selection import VarianceThreshold, SelectFromModel, SelectKBest, mutual_info_regression
+from sklearn.feature_selection import VarianceThreshold, SelectFromModel, SelectKBest, mutual_info_regression, RFE, f_regression
 from sklearn.decomposition import PCA
 
 def make_submission(model, X_train, y_train, X_test, filename = 'submission.csv'):
@@ -32,7 +32,7 @@ train, test = pp.read_train_test()
 
 ids = list(test.Id)
 
-train = pp.drop_outliers(train).reset_index()
+train = pp.drop_outliers(train).reset_index(drop = True)
 
 train.drop(['Id'], axis=1, inplace = True)
 test.drop(['Id'], axis=1, inplace = True)
@@ -42,10 +42,11 @@ train_y = (np.log1p(train.SalePrice)).values
 train.drop(['SalePrice'], axis=1, inplace = True)
 
 basic_pipeline = Pipeline([('convert', tr.Numeric2CategoryTransformer(["MSSubClass", "MoSold"])),
-                 ('missing', tr.HandleMissingTransformer()),
+                 ('missing', tr.HandleMissingTransformer(was_missing_features = False)),
                  ('date_related_features', tr.DateRelatedFeaturesTransformer()),
-                 #('more_features', tr.MoreFeaturesTransformer()),
                  #('encode_features', tr.EncodeTransformer()),
+                 ('overall_features', tr.FeatureEngineeringTransformer()),
+                 #('more_features', tr.MoreFeaturesTransformer()),
                  #('neighbourhood_features', tr.NeighbourhoodRelatedFeaturesTransformer()),
                  ])
 
@@ -71,10 +72,13 @@ third_pipeline = Pipeline([('scaler', RobustScaler()),
                            ('low_variance', VarianceThreshold(0.98 * (1 - 0.98))),
                            ('fu', FeatureUnion([
                                    #('pca', PCA(n_components=10)),
-                                   ('kbest', SelectKBest(mutual_info_regression, k=10)),
-                                   ('reduce_dim_lasso', SelectFromModel(Lasso(alpha=0.0004, random_state = seed), threshold = "0.5*mean")),
-                                   #('reduce_dim_rf', SelectFromModel(RandomForestRegressor(n_estimators = 150, 
-                                   #                                                     max_features = 0.4, random_state = seed), threshold = "mean")),
+                                   #('kbest', SelectKBest(mutual_info_regression, k=110)),
+                                   ('reduce_dim_lasso', SelectFromModel(Lasso(alpha=0.0004, random_state = seed))),
+                                   #('reduce_dim_rfe', RFE(Lasso(alpha=0.0004), 115, step=10))
+                                   #('reduce_dim_rf', SelectFromModel(RandomForestRegressor(n_estimators = 500, 
+                                   #                                                     max_features = 0.4, 
+                                   #                                                     min_samples_split = 4,
+                                   #                                                     random_state = seed), threshold = "mean")),
                                    ])),
                            ])
 
@@ -101,14 +105,14 @@ model_rforest = RandomForestRegressor(n_estimators = 300, max_features = 0.4,
                                       min_samples_split = 4,
                                       random_state=seed)
 
-model_GBoost = GradientBoostingRegressor(n_estimators=2000, learning_rate=0.03,
+model_GBoost = GradientBoostingRegressor(n_estimators=1000, learning_rate=0.03,
                                    max_depth=3, max_features=0.4,
                                    min_samples_leaf=20, min_samples_split=10, 
                                    loss='huber', random_state = seed)
 
 model_xgb = XGBRegressor(colsample_bytree=0.35, gamma=0.027, 
                              learning_rate=0.03, max_depth=4, 
-                             min_child_weight=1.7817, n_estimators=3000,
+                             min_child_weight=1.7817, n_estimators=1000,
                              reg_alpha=0.43, reg_lambda=0.88,
                              subsample=0.5213, silent=1,
                              random_state = seed)
@@ -131,7 +135,7 @@ linear_models.append(("ENet", model_ENet))
 linear_models.append(("KRR", model_KRR))
 linear_models.append(("byr", model_byr))
 linear_models.append(("lsvr", model_lsvr))
-linear_models.append(("lasso_lars", model_lasso_lars))
+#linear_models.append(("lasso_lars", model_lasso_lars))
 
 tree_models = []
 tree_models.append(("rforest", model_rforest))
@@ -164,7 +168,7 @@ ensemble_models.append(("averaged_plus_plus", averaged_plus_plus))
 ensemble_models.append(("averaged_full", avg_full))
 
 ensemble_results = pp.get_cross_validate(ensemble_models, train_X_reduced, train_y.ravel(), 
-                                     folds = 10, repetitions = 1, seed = seed, train_score = False)
+                                     folds = 10, repetitions = 3, seed = seed, train_score = False)
 print(ensemble_results)
 
 make_submission(averaged_models, train_X_reduced, train_y, test_X_reduced, filename = 'submission_avg.csv')
