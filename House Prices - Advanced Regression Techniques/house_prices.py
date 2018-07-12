@@ -1,20 +1,18 @@
 import preprocessing as pp
 import transformers as tr
 import ensemble as em
-from cv_lab import score_sq
 from sklearn.pipeline import Pipeline, FeatureUnion
-import feature_selection as fs
 import numpy as np
 from sklearn.kernel_ridge import KernelRidge
 from xgboost import XGBRegressor
 import lightgbm as lgb
 from sklearn.svm import SVR, LinearSVR
-from sklearn.linear_model import ElasticNet, Lasso, BayesianRidge, Ridge, SGDRegressor, LassoLars
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, ExtraTreesRegressor
+from sklearn.linear_model import ElasticNet, Lasso, BayesianRidge, Ridge, LassoLars
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.preprocessing import RobustScaler
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.feature_selection import VarianceThreshold, SelectFromModel
+from sklearn.feature_selection import VarianceThreshold, SelectFromModel, SelectKBest, mutual_info_regression
 from sklearn.decomposition import PCA
 
 def make_submission(model, X_train, y_train, X_test, filename = 'submission.csv'):
@@ -73,7 +71,8 @@ third_pipeline = Pipeline([('scaler', RobustScaler()),
                            ('low_variance', VarianceThreshold(0.98 * (1 - 0.98))),
                            ('fu', FeatureUnion([
                                    #('pca', PCA(n_components=10)),
-                                   ('reduce_dim_lasso', SelectFromModel(Lasso(alpha=0.0004, random_state = seed))),
+                                   ('kbest', SelectKBest(mutual_info_regression, k=10)),
+                                   ('reduce_dim_lasso', SelectFromModel(Lasso(alpha=0.0004, random_state = seed), threshold = "0.5*mean")),
                                    #('reduce_dim_rf', SelectFromModel(RandomForestRegressor(n_estimators = 150, 
                                    #                                                     max_features = 0.4, random_state = seed), threshold = "mean")),
                                    ])),
@@ -172,8 +171,8 @@ make_submission(averaged_models, train_X_reduced, train_y, test_X_reduced, filen
 
 
 import cv_lab as cvl
-hyperparameters = {'C':np.linspace(25,100,20)}
-hpg = cvl.HousePricesGridCV(SVR(epsilon = 0.0774, gamma = 0.0004, kernel = 'rbf'),
+hyperparameters = {'alpha':np.linspace(0.2,1.0,20)}
+hpg = cvl.HousePricesGridCV(KernelRidge(kernel='polynomial', degree=2, coef0=2.0, gamma=0.0032),
                             hyperparameters = hyperparameters, n_folds = 10, seed = seed)
 hpg.fit(train_X_reduced, train_y.ravel())
 hpg.get_best_results()
