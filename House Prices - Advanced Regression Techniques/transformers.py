@@ -24,7 +24,7 @@ def add_date_related_features(X):
     X_['GarageAge'] = X_['YrSold'] - X_['GarageYrBlt']
     X_.loc[X_.GarageYrBlt > X_.YrSold, "GarageAge"] = 0
     X_.loc[:, "IsHighSeason"] = (X_.loc[:, "MoSold"].isin([5, 6, 7]))
-    return X_
+    return X_, list(set(X_.columns) - set(X.columns))
 
 def get_feature_groups(X):
     num_columns = list(X.select_dtypes(exclude=['object']).columns)
@@ -35,8 +35,11 @@ def drop_outliers(X):
     return(X.drop(X[(X['GrLivArea']>4000) & (X['SalePrice']<300000)].index))
 
 def convert2category(X, columns = None):
-    X.loc[:, columns] = X.loc[:, columns].astype('category')
-    return X
+    #X.loc[:, columns] = X.loc[:, columns].astype('str')
+    X_ = X.copy()
+    for c in columns:
+        X_[c] = X_[c].astype('category')
+    return X_
 
 def more_features(X):
     X.loc[:, "IsRegularLotShape"] = (X.loc[:, "LotShape"] == "Reg") * 1
@@ -47,27 +50,38 @@ def more_features(X):
     X.loc[:, "IsPavedDrive"] = (X.loc[:, "PavedDrive"] == "Y") * 1    
     return X
 
-def add_columns_was_missing(X):
-    cols_with_missing = [col for col in X.columns if X[col].isnull().any()]
+def both_has_missing(train, test):
+    mtrain = [col for col in train.columns if train[col].isnull().any()]
+    mtest = [col for col in test.columns if test[col].isnull().any()]
+    return list(set(mtrain).intersection(set(mtest)))
+
+def add_columns_was_missing(X, cols = None):
+    if cols == None:
+        cols_with_missing = [col for col in X.columns if X[col].isnull().any()]
+    else:
+        cols_with_missing = cols
+    
     new_columns = []
     for col in cols_with_missing:
         new_col = col + '_was_missing'
         new_columns.append(new_col)
-        X[new_col] = X[col].isnull().astype(int)
+        X[new_col] = X[col].isnull()
     return X
 
-def handle_missing(X, add_was_missing_columns = False):
+def handle_missing(X, add_was_missing_columns = False, cols = None):
     group_by_col = "Neighborhood"
     
     if add_was_missing_columns :
-        X = add_columns_was_missing(X)
+        X = add_columns_was_missing(X, cols)
     
     median_numcols = ['LotFrontage']
     
     no_catcols = ["Alley", "BsmtCond", "BsmtExposure", "BsmtFinType1", 
                   "BsmtFinType2", "BsmtQual", "Fence", "FireplaceQu", 
                   "GarageCond", "GarageFinish", "GarageQual", "GarageType", 
-                  "MasVnrType", "MiscFeature", "PoolQC"]
+                  "MiscFeature", "PoolQC"]
+    
+    none_catcols = ["MasVnrType"]
     
     mode_catcols = ['Electrical', 'Exterior1st', 'Exterior2nd', 'Functional', 'KitchenQual', 'MSZoning',
                     'SaleType', 'Utilities']
@@ -79,6 +93,7 @@ def handle_missing(X, add_was_missing_columns = False):
     
     missing_dict = dict(zip(zero_cols,[0] * len(zero_cols)))
     missing_dict.update(dict(zip(no_catcols,["No"] * len(no_catcols))))
+    missing_dict.update(dict(zip(none_catcols,["None"] * len(none_catcols))))
     
     for (k, v) in missing_dict.items():
         X.loc[:, k] = X.loc[:, k].fillna(v)
@@ -110,14 +125,18 @@ def encode(X):
 #              quality_scale, quality_scale, slope_scale, shape_scale, paved_scale, quality_scale, access_scale, 
 #              utilities_scale, air_scale]
     
-    #cols_quality = ["BsmtCond", "BsmtQual", "ExterCond", "ExterQual", "FireplaceQu", "GarageCond", "GarageQual",
-    #                "HeatingQC", "KitchenQual", "PoolQC"]
+    cols_quality = ["BsmtCond", "BsmtQual", "ExterCond", "ExterQual", "FireplaceQu", "GarageCond", "GarageQual",
+                    "HeatingQC", "KitchenQual", "PoolQC"]
     
-    cols_quality = ["GarageCond", "GarageQual", "ExterCond", "ExterQual", "BsmtCond", "BsmtQual"]
+    cols_bsmt = ["BsmtFinType1", "BsmtFinType2"]
+    
+    cols_garage = ["GarageFinish"]
 
     scales = [quality_scale] * len(cols_quality)
+    scales += [basement_scale] * len(cols_bsmt)
+    scales += [finished_scale] * len(cols_garage)
     
-    return encode_features(X, cols_quality, scales)
+    return encode_features(X, cols_quality + cols_bsmt + cols_garage, scales)
 
 def shrink_scales(X, prefix = ""):
     overall_scale = {1 : 1, 2 : 1, 3 : 1, # bad
@@ -255,7 +274,8 @@ class DateRelatedFeaturesTransformer(BaseEstimator, TransformerMixin):
         pass
 
     def transform(self, X, y=None):
-        return add_date_related_features(X)
+        X_, self.columns = add_date_related_features(X)
+        return X_
 
     def fit(self, X, y=None):
         return self
@@ -293,11 +313,12 @@ class Convert2CategoryTransformer(BaseEstimator, TransformerMixin):
         return self
 
 class HandleMissingTransformer(BaseEstimator, TransformerMixin):
-    def __init__(self, was_missing_features = False):
+    def __init__(self, was_missing_features = False, cols = None):
         self.was_missing_features = was_missing_features
+        self.cols = cols
 
     def transform(self, X, y=None):
-        return handle_missing(X, self.was_missing_features)
+        return handle_missing(X, self.was_missing_features, self.cols)
 
     def fit(self, X, y=None):
         return self
@@ -386,7 +407,6 @@ class LogTransformer(BaseEstimator, TransformerMixin):
         return X
 
     def fit(self, X, y=None):
-        print(X.shape[1])
         return self
     
 class TypeSelectorTransformer(BaseEstimator, TransformerMixin):
@@ -398,6 +418,7 @@ class TypeSelectorTransformer(BaseEstimator, TransformerMixin):
     
     def transform(self, X):
         assert isinstance(X, pd.DataFrame)
+        self.columns = list(X.select_dtypes(include=[self.dtype]).columns)
         return X.select_dtypes(include=[self.dtype])
     
 class ColumnsSelectorTransformer(BaseEstimator, TransformerMixin):

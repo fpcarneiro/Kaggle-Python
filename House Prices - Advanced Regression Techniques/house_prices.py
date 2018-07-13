@@ -41,31 +41,61 @@ train_y = (np.log1p(train.SalePrice)).values
 
 train.drop(['SalePrice'], axis=1, inplace = True)
 
-basic_pipeline = Pipeline([('convert', tr.Convert2CategoryTransformer(["MSSubClass"])),
-                 ('missing', tr.HandleMissingTransformer(was_missing_features = False)),
-                 ('date_related_features', tr.DateRelatedFeaturesTransformer()),    
-                 ('encode_features', tr.EncodeTransformer()),
-                 ])
+preprocessing_steps = []
+preprocessing_steps.append(('convert', tr.Convert2CategoryTransformer(["MSSubClass"])))
+preprocessing_steps.append(('missing', tr.HandleMissingTransformer(True, tr.both_has_missing(train, test))))
+preprocessing_steps.append(('date_related_features', tr.DateRelatedFeaturesTransformer()))
+preprocessing_steps.append(('encode_features', tr.EncodeTransformer()))
 
-second_pipeline = Pipeline([('features', FeatureUnion([
-                         ('boolean', Pipeline([
-                                 ('selector', tr.TypeSelectorTransformer('bool')),
-                                 ])),
-                         ('numericals', Pipeline([
-                                 ('selector', tr.TypeSelectorTransformer(np.number)),
-                                 
-                                 ('com_log', tr.ColumnsSelectorTransformer(["LotFrontage", "LotArea"], True)),
-                                 ('sem_log', tr.ColumnsSelectorTransformer(["LotFrontage", "LotArea"], False)),
-                                 #('scaler', StandardScaler()),
-                                 ('log', tr.LogTransformer()),
-                                 ])),
-                        #('categoricals', Pipeline([
-                        #        ('selector', tr.TypeSelectorTransformer('object')),
-                        #        ('convert', tr.Convert2CategoryTransformer()),
-                        #        ('labeler', tr.StringIndexer()),
-                                #('hot_encode', tr.HotEncodeTransformer()),
-                        #        ]))
-                 ])),
+basic_pipeline = Pipeline(preprocessing_steps)
+
+# Boolean Features
+boolean_features = []
+boolean_features.append(('selector', tr.TypeSelectorTransformer('bool')))
+boolean_pipeline = Pipeline(boolean_features)
+
+# Numeric Features
+cols2Bin = ["MasVnrArea", "BsmtFinSF1", "BsmtFinSF2", "CentralAir", "LowQualFinSF", 
+            "EnclosedPorch", "3SsnPorch", "ScreenPorch", "PoolArea"]
+
+cols2log = ["LotFrontage", "LotArea", "MasVnrArea", "BsmtFinSF1", "BsmtFinSF2", 
+            "BsmtUnfSF", "1stFlrSF", "2ndFlrSF", "LowQualFinSF",
+            "GrLivArea", "GarageArea", "WoodDeckSF", "TotalBsmtSF", "OpenPorchSF", 
+            "EnclosedPorch", "3SsnPorch", "ScreenPorch", "PoolArea", "MiscVal"]
+
+colsNot2log = ["OverallCond", "OverallQual", "BsmtCond", "BsmtQual", "ExterCond", "ExterQual", "FireplaceQu", 
+               "GarageCond", "GarageQual", "HeatingQC", "KitchenQual", "PoolQC", "BsmtFinType1", "BsmtFinType2",
+               "YearBuilt", "YearRemodAdd", "GarageYrBlt", "MoSold", "YrSold", "BsmtFullBath", "BsmtHalfBath", "FullBath", "HalfBath", "BedroomAbvGr",
+               "TotRmsAbvGrd", "Fireplaces", "GarageFinish", "GarageCars", "Age", "RemodeledAge", "GarageAge", "KitchenAbvGr"]
+
+numeric_features_nolog = []
+numeric_features_nolog.append(('sem_log', tr.ColumnsSelectorTransformer(colsNot2log, False)))
+numeric_nolog_pipeline = Pipeline(numeric_features_nolog)
+
+numeric_features_log = []
+numeric_features_log.append(('com_log', tr.ColumnsSelectorTransformer(cols2log, False)))
+numeric_features_log.append(('log', tr.LogTransformer()))
+numeric_log_pipeline = Pipeline(numeric_features_log)
+
+numeric_features = []
+numeric_features.append(('selector', tr.TypeSelectorTransformer(np.number)))
+numeric_features.append(('split_numeric', FeatureUnion([('sl', numeric_nolog_pipeline), ('l', numeric_log_pipeline)])))
+numeric_pipeline = Pipeline(numeric_features)
+
+# Categorical Features
+categorical_features = []
+categorical_features.append(('selector', tr.TypeSelectorTransformer('object')))
+categorical_features.append(('convert', tr.Convert2CategoryTransformer()))
+#categorical_features.append(('labeler', tr.StringIndexer()))
+categorical_features.append(('hot_encode', tr.HotEncodeTransformer()))
+categorical_pipeline = Pipeline(categorical_features)
+
+second_pipeline = Pipeline([('features', 
+                             FeatureUnion([
+                                     ('boolean', boolean_pipeline),
+                                     ('numericals', numeric_pipeline),
+                                     ('categoricals', categorical_pipeline)
+                                     ])),
                  #('overall_features', tr.FeatureEngineeringTransformer()),
                  #('more_features', tr.MoreFeaturesTransformer()),
                  #('neighbourhood_features', tr.NeighbourhoodRelatedFeaturesTransformer()),
@@ -74,11 +104,17 @@ second_pipeline = Pipeline([('features', FeatureUnion([
 train_X = basic_pipeline.fit_transform(train, train_y)
 test_X = basic_pipeline.fit_transform(test)
 
+#nlog_cols = []
+#for (s, t) in basic_pipeline.named_steps.items():
+#    if hasattr(t, "columns"):
+#        nlog_cols += t.columns
+#print(nlog_cols)
+
 train_X = second_pipeline.fit_transform(train_X, train_y)
 test_X = second_pipeline.fit_transform(test_X)
 
 third_pipeline = Pipeline([('scaler', RobustScaler()),
-                           ('low_variance', VarianceThreshold(0.98 * (1 - 0.98))),
+                           ('low_variance', VarianceThreshold()),
                            ('fu', FeatureUnion([
                                    #('pca', PCA(n_components=10)),
                                    #('kbest', SelectKBest(mutual_info_regression, k=110)),
