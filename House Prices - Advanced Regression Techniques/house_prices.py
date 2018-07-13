@@ -47,12 +47,15 @@ basic_pipeline = Pipeline([('convert', tr.Convert2CategoryTransformer(["MSSubCla
                  ('encode_features', tr.EncodeTransformer()),
                  ])
 
-second_pipeline = Pipeline([('features', FeatureUnion(n_jobs=1, transformer_list=[
+second_pipeline = Pipeline([('features', FeatureUnion([
                          ('boolean', Pipeline([
                                  ('selector', tr.TypeSelectorTransformer('bool')),
                                  ])),
                          ('numericals', Pipeline([
                                  ('selector', tr.TypeSelectorTransformer(np.number)),
+                                 
+                                 ('com_log', tr.ColumnsSelectorTransformer(["LotFrontage", "LotArea"], True)),
+                                 ('sem_log', tr.ColumnsSelectorTransformer(["LotFrontage", "LotArea"], False)),
                                  #('scaler', StandardScaler()),
                                  ('log', tr.LogTransformer()),
                                  ])),

@@ -400,6 +400,21 @@ class TypeSelectorTransformer(BaseEstimator, TransformerMixin):
         assert isinstance(X, pd.DataFrame)
         return X.select_dtypes(include=[self.dtype])
     
+class ColumnsSelectorTransformer(BaseEstimator, TransformerMixin):
+    def __init__(self, columns = [], exclude = False):
+        self.columns = columns
+        self.exclude = exclude
+        
+    def fit(self, X, y=None):
+        return self
+    
+    def transform(self, X):
+        assert isinstance(X, pd.DataFrame)
+        if self.exclude:
+            return X.drop(self.columns, axis=1)
+        else:
+            return X[self.columns]
+    
 class StringIndexer(BaseEstimator, TransformerMixin):
     def fit(self, X, y=None):
         return self
