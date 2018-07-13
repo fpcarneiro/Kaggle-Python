@@ -16,14 +16,15 @@ air_scale = {"N" : 0, "Y" : 1}
 finished_scale = {"No" : 0, "Unf" : 1, "RFn" : 2, "Fin" : 3}
 
 def add_date_related_features(X):
-    X['Age'] = X['YrSold'] - X['YearBuilt']
-    X.loc[X.YearBuilt > X.YrSold, "Age"] = 0
-    X['RemodeledAge'] = X['YrSold'] - X['YearRemodAdd']
-    X.loc[X.YearRemodAdd > X.YrSold, "RemodeledAge"] = 0
-    X['GarageAge'] = X['YrSold'] - X['GarageYrBlt']
-    X.loc[X.GarageYrBlt > X.YrSold, "GarageAge"] = 0
-    X.loc[:, "IsHighSeason"] = (X.loc[:, "MoSold"].isin(["5", "6", "7"])) * 1
-    return X
+    X_ = X.copy()
+    X_['Age'] = X_['YrSold'] - X_['YearBuilt']
+    X_.loc[X_.YearBuilt > X_.YrSold, "Age"] = 0
+    X_['RemodeledAge'] = X_['YrSold'] - X_['YearRemodAdd']
+    X_.loc[X_.YearRemodAdd > X_.YrSold, "RemodeledAge"] = 0
+    X_['GarageAge'] = X_['YrSold'] - X_['GarageYrBlt']
+    X_.loc[X_.GarageYrBlt > X_.YrSold, "GarageAge"] = 0
+    X_.loc[:, "IsHighSeason"] = (X_.loc[:, "MoSold"].isin([5, 6, 7]))
+    return X_
 
 def get_feature_groups(X):
     num_columns = list(X.select_dtypes(exclude=['object']).columns)
@@ -33,8 +34,8 @@ def get_feature_groups(X):
 def drop_outliers(X):
     return(X.drop(X[(X['GrLivArea']>4000) & (X['SalePrice']<300000)].index))
 
-def convert_numeric2category(X, columns = ["MSSubClass", "MoSold"]):
-    X.loc[:, columns] = X.loc[:, columns].astype(str)
+def convert2category(X, columns = None):
+    X.loc[:, columns] = X.loc[:, columns].astype('category')
     return X
 
 def more_features(X):
@@ -245,8 +246,8 @@ def add_neighbourhood_related_features(X, cols = None):
     
     return X
 
-def hot_encode(X, columns):
-    return pd.get_dummies(X, columns = columns)
+def hot_encode(X):
+    return pd.get_dummies(X)
     #return (pd.concat([X, encoded], axis=1).drop(columns, axis=1))
 
 class DateRelatedFeaturesTransformer(BaseEstimator, TransformerMixin):
@@ -279,14 +280,16 @@ class DropOutliersTransformer(BaseEstimator, TransformerMixin):
     def fit(self, X, y=None):
         return self
 
-class Numeric2CategoryTransformer(BaseEstimator, TransformerMixin):
-    def __init__(self, columns = ["MSSubClass", "MoSold"]):
+class Convert2CategoryTransformer(BaseEstimator, TransformerMixin):
+    def __init__(self, columns = None):
         self.columns = columns
 
     def transform(self, X, y=None):
-        return convert_numeric2category(X, self.columns)
+        return convert2category(X, self.columns)
 
     def fit(self, X, y=None):
+        if self.columns == None:
+            self.columns = list(X.select_dtypes(include=['object']).columns)
         return self
 
 class HandleMissingTransformer(BaseEstimator, TransformerMixin):
@@ -365,32 +368,44 @@ class HaveStuffTransformer(BaseEstimator, TransformerMixin):
         return self
 
 class HotEncodeTransformer(BaseEstimator, TransformerMixin):
-    def __init__(self, columns = None):
-        self.columns = columns
+    def __init__(self):
+        pass
 
     def transform(self, X, y=None):
-        return hot_encode(X, self.columns)
+        return hot_encode(X)
 
     def fit(self, X, y=None):
-        if self.columns == None:
-            self.columns = list(X.select_dtypes(include=['object']).columns)
         return self
     
 class LogTransformer(BaseEstimator, TransformerMixin):
-    def __init__(self, columns = None, threshold = 0.75):
-        self.columns = columns
-        self.columns_skewness = []
-        self.threshold = threshold
+    def __init__(self):
+        pass
 
     def transform(self, X, y=None):
-        print(str(len(self.columns_skewness)) + " skewed numerical features to log transform")
-        X.loc[:,self.columns_skewness] = np.log1p(X.loc[:, self.columns_skewness])
+        X = np.log1p(X)
         return X
 
     def fit(self, X, y=None):
-        if self.columns == None:
-            self.columns = list(X.select_dtypes(exclude=['object']).columns)
-        skewness = X[self.columns].apply(lambda x: skew(x))
-        self.columns_skewness = skewness[abs(skewness) > self.threshold].index
-        #self.columns_skewness = self.columns
+        print(X.shape[1])
         return self
+    
+class TypeSelectorTransformer(BaseEstimator, TransformerMixin):
+    def __init__(self, dtype):
+        self.dtype = dtype
+        
+    def fit(self, X, y=None):
+        return self
+    
+    def transform(self, X):
+        assert isinstance(X, pd.DataFrame)
+        return X.select_dtypes(include=[self.dtype])
+    
+class StringIndexer(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        return self
+    
+    def transform(self, X):
+        assert isinstance(X, pd.DataFrame)
+        return X.apply(lambda s: s.cat.codes.replace(
+            {-1: len(s.cat.categories)}
+        ))
