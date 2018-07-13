@@ -9,7 +9,7 @@ import lightgbm as lgb
 from sklearn.svm import SVR, LinearSVR
 from sklearn.linear_model import ElasticNet, Lasso, BayesianRidge, Ridge, LassoLars
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from sklearn.preprocessing import RobustScaler
+from sklearn.preprocessing import RobustScaler, StandardScaler
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.feature_selection import VarianceThreshold, SelectFromModel, SelectKBest, mutual_info_regression, RFE, f_regression
@@ -41,11 +41,29 @@ train_y = (np.log1p(train.SalePrice)).values
 
 train.drop(['SalePrice'], axis=1, inplace = True)
 
-basic_pipeline = Pipeline([('convert', tr.Numeric2CategoryTransformer(["MSSubClass", "MoSold"])),
+basic_pipeline = Pipeline([('convert', tr.Convert2CategoryTransformer(["MSSubClass"])),
                  ('missing', tr.HandleMissingTransformer(was_missing_features = False)),
-                 ('date_related_features', tr.DateRelatedFeaturesTransformer()),
-                 #('encode_features', tr.EncodeTransformer()),
-                 ('overall_features', tr.FeatureEngineeringTransformer()),
+                 ('date_related_features', tr.DateRelatedFeaturesTransformer()),    
+                 ('encode_features', tr.EncodeTransformer()),
+                 ])
+
+second_pipeline = Pipeline([('features', FeatureUnion(n_jobs=1, transformer_list=[
+                         ('boolean', Pipeline([
+                                 ('selector', tr.TypeSelectorTransformer('bool')),
+                                 ])),
+                         ('numericals', Pipeline([
+                                 ('selector', tr.TypeSelectorTransformer(np.number)),
+                                 #('scaler', StandardScaler()),
+                                 ('log', tr.LogTransformer()),
+                                 ])),
+                        #('categoricals', Pipeline([
+                        #        ('selector', tr.TypeSelectorTransformer('object')),
+                        #        ('convert', tr.Convert2CategoryTransformer()),
+                        #        ('labeler', tr.StringIndexer()),
+                                #('hot_encode', tr.HotEncodeTransformer()),
+                        #        ]))
+                 ])),
+                 #('overall_features', tr.FeatureEngineeringTransformer()),
                  #('more_features', tr.MoreFeaturesTransformer()),
                  #('neighbourhood_features', tr.NeighbourhoodRelatedFeaturesTransformer()),
                  ])
@@ -53,20 +71,8 @@ basic_pipeline = Pipeline([('convert', tr.Numeric2CategoryTransformer(["MSSubCla
 train_X = basic_pipeline.fit_transform(train, train_y)
 test_X = basic_pipeline.fit_transform(test)
 
-log_transformation = tr.LogTransformer(threshold = 0.5)
-log_transformation.fit(train_X)
-train_X = log_transformation.fit_transform(train_X)
-test_X = log_transformation.transform(test_X)
-
-second_pipeline = Pipeline([
-                 #('have_stuff_features', tr.HaveStuffTransformer()),
-                 ('hot_encode', tr.HotEncodeTransformer()),
-                 ])
-
 train_X = second_pipeline.fit_transform(train_X, train_y)
 test_X = second_pipeline.fit_transform(test_X)
-
-train_X, test_X = train_X.align(test_X, join='outer', axis=1, fill_value = 0)
 
 third_pipeline = Pipeline([('scaler', RobustScaler()),
                            ('low_variance', VarianceThreshold(0.98 * (1 - 0.98))),
