@@ -91,3 +91,40 @@ def get_cross_validate(medels_list, X, y, folds = 5, seed = 2018, train_score = 
     results.sort_values(by=[sort_by], ascending = True, inplace = True)
     return results
 
+def equal_columns(col_a, col_b):
+    return np.all(col_a == col_b)
+
+from tqdm import tqdm
+def duplicate_columns(df, return_dataframe = False, verbose = False, progress = True):
+    '''
+        a function to detect and possibly remove duplicated columns for a pandas dataframe
+    '''
+    # group columns by dtypes, only the columns of the same dtypes can be duplicate of each other
+    groups = df.columns.to_series().groupby(df.dtypes).groups
+    duplicated_columns = {}
+    
+    if progress == True:
+        it = tqdm(groups.items())
+    else:
+        it = groups.items()
+        
+    for dtype, col_names in it:
+        column_values = df[col_names]
+        num_columns = len(col_names)
+ 
+        # find duplicated columns by checking pairs of columns, store first column name if duplicate exist 
+        for i in range(num_columns):
+            column_i = column_values.iloc[:,i]
+            for j in range(i + 1, num_columns):
+                column_j = column_values.iloc[:,j]
+                if equal_columns(column_i, column_j):
+                    if verbose: 
+                        print("column {} is a duplicate of column {}".format(col_names[i], col_names[j]))
+                    duplicated_columns[col_names[j]] = col_names[i]
+                    break
+    if not return_dataframe:
+        # return the column names of those duplicated exists
+        return duplicated_columns
+    else:
+        # return a dataframe with duplicated columns dropped 
+        return df.drop(labels = list(duplicated_columns.keys()), axis = 1)

@@ -30,7 +30,7 @@ warnings.warn = ignore_warn
 
 def get_rfc():
     return RandomForestClassifier(
-        n_estimators=1000,
+        n_estimators=10,
         max_features=0.5,
         max_depth=None,
         max_leaf_nodes=270,
@@ -62,6 +62,9 @@ fit_params = {
         'verbose': False
     }
 
+import matplotlib.pyplot as plt
+plt.spy(train)
+
 train, test = pp.read_train_test(train_file = 'train.csv', test_file = 'test.csv')
 
 #train_sparse = train.replace(0, np.nan).to_sparse()
@@ -81,23 +84,23 @@ pipe = Pipeline(
         [
             ('vt', VarianceThreshold(threshold=0.0)),
             ('ut', tf.UniqueTransformer()),
-            ('fu', FeatureUnion(
-                    [
-                        ('pca', PCA(n_components=100)),
-                        ('ct-2', tf.ClassifierTransformer(get_rfc(), n_classes=2, cv=5)),
-                        ('ct-3', tf.ClassifierTransformer(get_rfc(), n_classes=3, cv=5)),
-                        ('ct-4', tf.ClassifierTransformer(get_rfc(), n_classes=4, cv=5)),
-                        ('ct-5', tf.ClassifierTransformer(get_rfc(), n_classes=5, cv=5)),
-                        ('st', tf.StatsTransformer(stat_funs=tf.get_stat_funs()))
-                    ]
-                )
-            ),
-            ('xgb-cv', reg.XGBRegressorCV(
-                    xgb_params=xgb_params,
-                    fit_params=fit_params,
-                    cv=10
-                )
-            )
+            #('fu', FeatureUnion(
+             #       [
+              #          ('pca', PCA(n_components=100)),
+               #         ('ct-2', tf.ClassifierTransformer(get_rfc(), n_classes=2, cv=5)),
+                #        ('ct-3', tf.ClassifierTransformer(get_rfc(), n_classes=3, cv=5)),
+                 #       ('ct-4', tf.ClassifierTransformer(get_rfc(), n_classes=4, cv=5)),
+                  #      ('ct-5', tf.ClassifierTransformer(get_rfc(), n_classes=5, cv=5)),
+                   #     ('st', tf.StatsTransformer(stat_funs=tf.get_stat_funs()))
+                    #]
+                #)
+            #),
+            #('xgb-cv', reg.XGBRegressorCV(
+            #        xgb_params=xgb_params,
+            #        fit_params=fit_params,
+            #        cv=10
+            #    )
+            #)
         ]
     )
 
@@ -114,6 +117,12 @@ print(test_X_reduced.shape)
 train_set_X, test_set_X, train_set_y, test_set_y = train_test_split(train_X_reduced, train_y, test_size=0.1)
 
 train_set_X.shape
+
+
+rf = RandomForestClassifier()
+
+
+
 
 tree_models = []
 models = []
