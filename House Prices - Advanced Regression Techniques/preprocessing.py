@@ -26,6 +26,15 @@ def read_train_test(train_file = 'train.csv', test_file = 'test.csv'):
 
 def drop_outliers(dataset):
     return(dataset.drop(dataset[(dataset['GrLivArea']>4000) & (dataset['SalePrice']<300000)].index))
+    
+def fix_testset(dataset):
+    dataset_ = dataset.copy()
+    dataset_.loc[960, 'PoolQC'] = 'Fa'
+    dataset_.loc[1043, 'PoolQC'] = 'Gd'
+    dataset_.loc[1139, 'PoolQC'] = 'Fa'
+
+    dataset_.loc[dataset_.GarageYrBlt == 2207, "GarageYrBlt"] = 2007
+    return dataset_
 
 def concat_train_test(train, test, ignore_index=False):
     dataset = train.append(test, ignore_index=ignore_index)
@@ -39,13 +48,12 @@ def convert_numeric2category(dataset):
     for col in NumStr:
         dataset[col]=dataset[col].astype(str)
 
-def high_occurance_missing(dataset, threshold):    
+def high_occurance_missing(dataset, threshold = 0.00000000001):    
     return([c for c in list(dataset.columns) if ( dataset[c].isnull().sum() / len(dataset) ) >= threshold])
 
-def get_feature_groups(dataset, drop_list = ['dataset', 'Id']):
-    mydata = dataset.drop(drop_list, axis=1)
-    num_columns = list(mydata.select_dtypes(exclude=['object']).columns)
-    cat_columns = list(mydata.select_dtypes(include=['object']).columns)
+def get_feature_groups(dataset):
+    num_columns = list(dataset.select_dtypes(exclude=['object', 'category']).columns)
+    cat_columns = list(dataset.select_dtypes(include=['object', 'category']).columns)
     return (num_columns, cat_columns)
 
 def hot_encode(dataset, drop_list = ['dataset', 'Id']):
@@ -254,12 +262,14 @@ def score_model(estimator, X, y, n_folds = 5, scoring_func="neg_mean_squared_err
     score = -cross_val_score(estimator, X, y, scoring=scoring_func, cv = kf)
     return(score)
 
-def log_transform(dataset, cols, threshold =0.75):
+def log_transform(dataset, cols = None, threshold = 0.5):
+    if cols == None:
+        cols = list(dataset.select_dtypes(exclude=['object', 'category']).columns)
     skewness = dataset[cols].apply(lambda x: skew(x))
     skewness = skewness[abs(skewness) > threshold]
-    print(str(skewness.shape[0]) + " skewed numerical features to log transform")
+    #print(str(skewness.shape[0]) + " skewed numerical features to log transform")
     skewed_features = skewness.index
-    dataset[skewed_features] = np.log1p(dataset[skewed_features])
+    #dataset[skewed_features] = np.log1p(dataset[skewed_features])
     return list((dataset[skewed_features]).columns)
     
 def more_features(dataset):
@@ -334,22 +344,27 @@ def cross_validate_model(estimator, X, y, n_folds = 5, repetitions = 1, scoring_
     scores = cross_validate(estimator, X, y, scoring=scoring_func, cv = kf, return_train_score = return_train_score, n_jobs = jobs)
     return(scores)
 
+model_name = "Estimator"
+score_mean = "Score (mean)"
+score_std = "Score (std)"
+scores_field = "CV Scores"
+
 def get_cross_validate(medels_list, X, y, folds = 5, repetitions = 1, seed = 2018, train_score = False, jobs = -1): 
     sort_by = "Score (mean)"
     if train_score:
-        results = pd.DataFrame(columns = ["Estimator", "Score (mean)", "Score (std)", "CV Scores",
+        results = pd.DataFrame(columns = [model_name, score_mean, score_std, scores_field,
                                           "Train Score (mean)", "Train Score (std)", "Train CV Scores"])
     else:
-        results = pd.DataFrame(columns = ["Estimator", "Score (mean)", "Score (std)", "CV Scores"])
+        results = pd.DataFrame(columns = [model_name, score_mean, score_std, scores_field])
         
     for name, model in medels_list:
         scores =  cross_validate_model(model, X, y, n_folds = folds, repetitions = repetitions, seed = seed, 
                                        return_train_score = train_score, jobs = jobs)
         test_score = np.sqrt(-scores["test_score"])
-        record = {"Estimator": name,
-                  "Score (mean)": test_score.mean(),
-                  "Score (std)": test_score.std(),
-                  "CV Scores": test_score}
+        record = {model_name: name,
+                  score_mean: test_score.mean(),
+                  score_std: test_score.std(),
+                  scores_field: test_score}
         
         if train_score:
             train_score = np.sqrt(-scores["train_score"])
@@ -361,12 +376,54 @@ def get_cross_validate(medels_list, X, y, folds = 5, repetitions = 1, seed = 201
     results.sort_values(by=[sort_by], ascending = True, inplace = True)
     return results
 
+def get_submission_file_name(results_table):
+    template = '{0}_cv_{1:.4f}_std_{2:.4f}.csv'
+    return (template.format(results_table.loc[0,:][model_name], results_table.loc[0,:][score_mean], 
+                    results_table.loc[0,:][score_std]))
+
 def get_splits_year(dataset, column):
     vc = list(dataset[column].value_counts(sort=False).index.values)
     for year in vc[:-1]:
         train_index = dataset[dataset[column] <= year].index.values
         test_index = dataset[dataset[column] > year].index.values
         yield (train_index, test_index)
+
+def get_constant_features(dataset):
+    feats_counts = dataset.nunique(dropna = False)
+    constant_features = feats_counts.loc[feats_counts==1].index.tolist()
+    return constant_features
+
+def equal_columns(col_a, col_b):
+    return np.all(col_a == col_b)
+
+def duplicate_columns(df, return_dataframe = False, verbose = False):
+    '''
+        a function to detect and possibly remove duplicated columns for a pandas dataframe
+    '''
+    # group columns by dtypes, only the columns of the same dtypes can be duplicate of each other
+    groups = df.columns.to_series().groupby(df.dtypes).groups
+    duplicated_columns = {}
+ 
+    for dtype, col_names in groups.items():
+        column_values = df[col_names]
+        num_columns = len(col_names)
+ 
+        # find duplicated columns by checking pairs of columns, store first column name if duplicate exist 
+        for i in range(num_columns):
+            column_i = column_values.iloc[:,i]
+            for j in range(i + 1, num_columns):
+                column_j = column_values.iloc[:,j]
+                if equal_columns(column_i, column_j):
+                    if verbose: 
+                        print("column {} is a duplicate of column {}".format(col_names[i], col_names[j]))
+                    duplicated_columns[col_names[j]] = col_names[i]
+                    break
+    if not return_dataframe:
+        # return the column names of those duplicated exists
+        return duplicated_columns
+    else:
+        # return a dataframe with duplicated columns dropped 
+        return df.drop(labels = list(duplicated_columns.keys()), axis = 1)
 
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 def get_processed_datasets():

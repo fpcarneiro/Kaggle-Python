@@ -23,11 +23,11 @@ def add_date_related_features(X):
     X_.loc[X_.YearRemodAdd > X_.YrSold, "RemodeledAge"] = 0
     X_['GarageAge'] = X_['YrSold'] - X_['GarageYrBlt']
     X_.loc[X_.GarageYrBlt > X_.YrSold, "GarageAge"] = 0
-    X_.loc[:, "IsHighSeason"] = (X_.loc[:, "MoSold"].isin([5, 6, 7]))
+    X_.loc[:, "IsHighSeason"] = (X_.loc[:, "MoSold"].isin(["5", "6", "7"]))
     return X_, list(set(X_.columns) - set(X.columns))
 
 def get_feature_groups(X):
-    num_columns = list(X.select_dtypes(exclude=['object']).columns)
+    num_columns = list(X.select_dtypes(exclude=['object', 'category']).columns)
     cat_columns = list(X.select_dtypes(include=['object']).columns)
     return (num_columns, cat_columns)
 
@@ -35,10 +35,9 @@ def drop_outliers(X):
     return(X.drop(X[(X['GrLivArea']>4000) & (X['SalePrice']<300000)].index))
 
 def convert2category(X, columns = None):
-    #X.loc[:, columns] = X.loc[:, columns].astype('str')
     X_ = X.copy()
     for c in columns:
-        X_[c] = X_[c].astype('category')
+        X_[c] = X_[c].astype('str')
     return X_
 
 def more_features(X):
@@ -50,17 +49,8 @@ def more_features(X):
     X.loc[:, "IsPavedDrive"] = (X.loc[:, "PavedDrive"] == "Y") * 1    
     return X
 
-def both_has_missing(train, test):
-    mtrain = [col for col in train.columns if train[col].isnull().any()]
-    mtest = [col for col in test.columns if test[col].isnull().any()]
-    return list(set(mtrain).intersection(set(mtest)))
-
-def add_columns_was_missing(X, cols = None):
-    if cols == None:
-        cols_with_missing = [col for col in X.columns if X[col].isnull().any()]
-    else:
-        cols_with_missing = cols
-    
+def add_columns_was_missing(X):
+    cols_with_missing = [col for col in X.columns if X[col].isnull().any()]
     new_columns = []
     for col in cols_with_missing:
         new_col = col + '_was_missing'
@@ -68,11 +58,11 @@ def add_columns_was_missing(X, cols = None):
         X[new_col] = X[col].isnull()
     return X
 
-def handle_missing(X, add_was_missing_columns = False, cols = None):
-    group_by_col = "Neighborhood"
+def handle_missing(X, add_was_missing_columns = False):
+    group_by_col = ["Neighborhood"]
     
     if add_was_missing_columns :
-        X = add_columns_was_missing(X, cols)
+        X = add_columns_was_missing(X)
     
     median_numcols = ['LotFrontage']
     
@@ -127,16 +117,10 @@ def encode(X):
     
     cols_quality = ["BsmtCond", "BsmtQual", "ExterCond", "ExterQual", "FireplaceQu", "GarageCond", "GarageQual",
                     "HeatingQC", "KitchenQual", "PoolQC"]
-    
-    cols_bsmt = ["BsmtFinType1", "BsmtFinType2"]
-    
-    cols_garage = ["GarageFinish"]
 
     scales = [quality_scale] * len(cols_quality)
-    scales += [basement_scale] * len(cols_bsmt)
-    scales += [finished_scale] * len(cols_garage)
     
-    return encode_features(X, cols_quality + cols_bsmt + cols_garage, scales)
+    return encode_features(X, cols_quality, scales)
 
 def shrink_scales(X, prefix = ""):
     overall_scale = {1 : 1, 2 : 1, 3 : 1, # bad
@@ -180,23 +164,22 @@ def shrink_scales(X, prefix = ""):
 
 def add_engineered_features(X):
     X["OverallGrade"] = X["OverallQual"] * X["OverallCond"]
-    #X["GarageGrade"] = X["GarageQual"] * X["GarageCond"]
-    #X["ExterGrade"] = X["ExterQual"] * X["ExterCond"]
-    #X["BsmtGrade"] = X["BsmtQual"] * X["BsmtCond"]
-    #X["KitchenScore"] = X["KitchenAbvGr"] * X["KitchenQual"]
-    #X["FireplaceScore"] = X["Fireplaces"] * X["FireplaceQu"]
-    #X["GarageScore"] = X["GarageArea"] * X["GarageQual"]
-    #X["PoolScore"] = X["PoolArea"] * X["PoolQC"]
-    #X["TotalBath"] = X["BsmtFullBath"] + (0.5 * X["BsmtHalfBath"]) + X["FullBath"] + (0.5 * X["HalfBath"])
+    X["GarageGrade"] = X["GarageQual"] * X["GarageCond"]
+    X["ExterGrade"] = X["ExterQual"] * X["ExterCond"]
+    X["KitchenScore"] = X["KitchenAbvGr"] * X["KitchenQual"]
+    X["FireplaceScore"] = X["Fireplaces"] * X["FireplaceQu"]
+    X["GarageScore"] = X["GarageArea"] * X["GarageQual"]
+    X["PoolScore"] = X["PoolArea"] * X["PoolQC"]
+    X["TotalBath"] = X["BsmtFullBath"] + (0.5 * X["BsmtHalfBath"]) + X["FullBath"] + (0.5 * X["HalfBath"])
     X["AllSF"] = X["GrLivArea"] + X["TotalBsmtSF"]
     X["AllFlrsSF"] = X["1stFlrSF"] + X["2ndFlrSF"]
     X["AllPorchSF"] = X["OpenPorchSF"] + X["EnclosedPorch"] + X["3SsnPorch"] + X["ScreenPorch"]
-    #X["HasMasVnr"] = X.MasVnrType.replace({"BrkCmn" : 1, "BrkFace" : 1, "CBlock" : 1, "Stone" : 1, "None" : 0})
-    #X["BoughtOffPlan"] = X.SaleCondition.replace({"Abnorml" : 0, "Alloca" : 0, "AdjLand" : 0, "Family" : 0, "Normal" : 0, "Partial" : 1})
+    X["HasMasVnr"] = X.MasVnrType.replace({"BrkCmn" : 1, "BrkFace" : 1, "CBlock" : 1, "Stone" : 1, "None" : 0})
+    X["BoughtOffPlan"] = X.SaleCondition.replace({"Abnorml" : 0, "Alloca" : 0, "AdjLand" : 0, "Family" : 0, "Normal" : 0, "Partial" : 1})
     X['TotalSF'] = X['TotalBsmtSF'] + X['1stFlrSF'] + X['2ndFlrSF']
     X['LowQualFinFrac'] = X['LowQualFinSF'] / X['GrLivArea']
-    #X['1stFlrFrac'] = X['1stFlrSF'] / X['GrLivArea']
-    #X['2ndFlrFrac'] = X['2ndFlrSF'] / X['GrLivArea']
+    X['1stFlrFrac'] = X['1stFlrSF'] / X['GrLivArea']
+    X['2ndFlrFrac'] = X['2ndFlrSF'] / X['GrLivArea']
     X['TotalAreaSF'] = X['GrLivArea'] + X['TotalBsmtSF'] + X['GarageArea'] + X['EnclosedPorch']+X['ScreenPorch']
     
     #X['LivingAreaSF'] = X['1stFlrSF'] + X['2ndFlrSF'] + X['BsmtGLQSF'] + X['BsmtALQSF'] + X['BsmtBLQSF']
@@ -250,7 +233,7 @@ def add_neighbourhood_related_features(X, cols = None):
     
     if cols == None:
         #cols = ["GrLivArea", "OverallQual", "YearBuilt", "Age", "BsmtFinSF1"]
-        num_columns = list(X.select_dtypes(exclude=['object']).columns)
+        num_columns = list(X.select_dtypes(exclude=['object', 'category']).columns)
         cat_columns = list(X.select_dtypes(include=['object']).columns)
 
     for col in num_columns:
@@ -265,8 +248,8 @@ def add_neighbourhood_related_features(X, cols = None):
     
     return X
 
-def hot_encode(X):
-    return pd.get_dummies(X)
+def hot_encode(X, columns):
+    return pd.get_dummies(X, columns = columns)
     #return (pd.concat([X, encoded], axis=1).drop(columns, axis=1))
 
 class DateRelatedFeaturesTransformer(BaseEstimator, TransformerMixin):
@@ -313,12 +296,11 @@ class Convert2CategoryTransformer(BaseEstimator, TransformerMixin):
         return self
 
 class HandleMissingTransformer(BaseEstimator, TransformerMixin):
-    def __init__(self, was_missing_features = False, cols = None):
-        self.was_missing_features = was_missing_features
-        self.cols = cols
+    def __init__(self):
+        pass
 
     def transform(self, X, y=None):
-        return handle_missing(X, self.was_missing_features, self.cols)
+        return handle_missing(X)
 
     def fit(self, X, y=None):
         return self
@@ -389,13 +371,15 @@ class HaveStuffTransformer(BaseEstimator, TransformerMixin):
         return self
 
 class HotEncodeTransformer(BaseEstimator, TransformerMixin):
-    def __init__(self):
-        pass
+    def __init__(self, columns = None):
+        self.columns = columns
 
     def transform(self, X, y=None):
-        return hot_encode(X)
+        return hot_encode(X, self.columns)
 
     def fit(self, X, y=None):
+        if self.columns == None:
+            self.columns = list(X.select_dtypes(include=['object']).columns)
         return self
     
 class LogTransformer(BaseEstimator, TransformerMixin):
@@ -403,45 +387,24 @@ class LogTransformer(BaseEstimator, TransformerMixin):
         pass
 
     def transform(self, X, y=None):
-        X = np.log1p(X)
-        return X
+        return np.log1p(X)
 
     def fit(self, X, y=None):
         return self
     
-class TypeSelectorTransformer(BaseEstimator, TransformerMixin):
-    def __init__(self, dtype):
-        self.dtype = dtype
+class UniqueTransformer(BaseEstimator, TransformerMixin):
+    
+    def __init__(self, axis=1, accept_sparse=False):
+        if axis == 0:
+            raise NotImplementedError('axis is 0! Not implemented!')
+        if accept_sparse:
+            raise NotImplementedError('accept_sparse is True! Not implemented!')
+        self.axis = axis
+        self.accept_sparse = accept_sparse
         
     def fit(self, X, y=None):
+        _, self.unique_indices_ = np.unique(X, axis=self.axis, return_index=True)
         return self
     
-    def transform(self, X):
-        assert isinstance(X, pd.DataFrame)
-        self.columns = list(X.select_dtypes(include=[self.dtype]).columns)
-        return X.select_dtypes(include=[self.dtype])
-    
-class ColumnsSelectorTransformer(BaseEstimator, TransformerMixin):
-    def __init__(self, columns = [], exclude = False):
-        self.columns = columns
-        self.exclude = exclude
-        
-    def fit(self, X, y=None):
-        return self
-    
-    def transform(self, X):
-        assert isinstance(X, pd.DataFrame)
-        if self.exclude:
-            return X.drop(self.columns, axis=1)
-        else:
-            return X[self.columns]
-    
-class StringIndexer(BaseEstimator, TransformerMixin):
-    def fit(self, X, y=None):
-        return self
-    
-    def transform(self, X):
-        assert isinstance(X, pd.DataFrame)
-        return X.apply(lambda s: s.cat.codes.replace(
-            {-1: len(s.cat.categories)}
-        ))
+    def transform(self, X, y=None):
+        return X[:, self.unique_indices_]

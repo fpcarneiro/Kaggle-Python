@@ -1,19 +1,20 @@
 import preprocessing as pp
 import transformers as tr
 import ensemble as em
-from sklearn.pipeline import Pipeline, FeatureUnion
+from cv_lab import score_sq
+from sklearn.pipeline import Pipeline
+import feature_selection as fs
 import numpy as np
 from sklearn.kernel_ridge import KernelRidge
 from xgboost import XGBRegressor
 import lightgbm as lgb
 from sklearn.svm import SVR, LinearSVR
-from sklearn.linear_model import ElasticNet, Lasso, BayesianRidge, Ridge, LassoLars
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from sklearn.preprocessing import RobustScaler, StandardScaler
+from sklearn.linear_model import ElasticNet, Lasso, BayesianRidge, Ridge, SGDRegressor, LassoLars
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, ExtraTreesRegressor
+from sklearn.preprocessing import RobustScaler, LabelBinarizer, Binarizer
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.feature_selection import VarianceThreshold, SelectFromModel, SelectKBest, mutual_info_regression, RFE, f_regression
-from sklearn.decomposition import PCA
+from sklearn.feature_selection import VarianceThreshold, SelectFromModel
 
 def make_submission(model, X_train, y_train, X_test, filename = 'submission.csv'):
     model.fit(X_train, y_train)
@@ -26,13 +27,14 @@ def ignore_warn(*args, **kwargs):
     pass
 warnings.warn = ignore_warn #ignore annoying warning (from sklearn and seaborn)
 
-seed = 2018
+seed = 1982
 
 train, test = pp.read_train_test()
 
 ids = list(test.Id)
 
 train = pp.drop_outliers(train).reset_index(drop = True)
+test = pp.fix_testset(test)
 
 train.drop(['Id'], axis=1, inplace = True)
 test.drop(['Id'], axis=1, inplace = True)
@@ -41,91 +43,68 @@ train_y = (np.log1p(train.SalePrice)).values
 
 train.drop(['SalePrice'], axis=1, inplace = True)
 
-preprocessing_steps = []
-preprocessing_steps.append(('convert', tr.Convert2CategoryTransformer(["MSSubClass"])))
-preprocessing_steps.append(('missing', tr.HandleMissingTransformer(True, tr.both_has_missing(train, test))))
-preprocessing_steps.append(('date_related_features', tr.DateRelatedFeaturesTransformer()))
-preprocessing_steps.append(('encode_features', tr.EncodeTransformer()))
-
-basic_pipeline = Pipeline(preprocessing_steps)
-
-# Boolean Features
-boolean_features = []
-boolean_features.append(('selector', tr.TypeSelectorTransformer('bool')))
-boolean_pipeline = Pipeline(boolean_features)
-
-# Numeric Features
-cols2Bin = ["MasVnrArea", "BsmtFinSF1", "BsmtFinSF2", "CentralAir", "LowQualFinSF", 
-            "EnclosedPorch", "3SsnPorch", "ScreenPorch", "PoolArea"]
-
-cols2log = ["LotFrontage", "LotArea", "MasVnrArea", "BsmtFinSF1", "BsmtFinSF2", 
-            "BsmtUnfSF", "1stFlrSF", "2ndFlrSF", "LowQualFinSF",
-            "GrLivArea", "GarageArea", "WoodDeckSF", "TotalBsmtSF", "OpenPorchSF", 
-            "EnclosedPorch", "3SsnPorch", "ScreenPorch", "PoolArea", "MiscVal"]
-
-colsNot2log = ["OverallCond", "OverallQual", "BsmtCond", "BsmtQual", "ExterCond", "ExterQual", "FireplaceQu", 
-               "GarageCond", "GarageQual", "HeatingQC", "KitchenQual", "PoolQC", "BsmtFinType1", "BsmtFinType2",
-               "YearBuilt", "YearRemodAdd", "GarageYrBlt", "MoSold", "YrSold", "BsmtFullBath", "BsmtHalfBath", "FullBath", "HalfBath", "BedroomAbvGr",
-               "TotRmsAbvGrd", "Fireplaces", "GarageFinish", "GarageCars", "Age", "RemodeledAge", "GarageAge", "KitchenAbvGr"]
-
-numeric_features_nolog = []
-numeric_features_nolog.append(('sem_log', tr.ColumnsSelectorTransformer(colsNot2log, False)))
-numeric_nolog_pipeline = Pipeline(numeric_features_nolog)
-
-numeric_features_log = []
-numeric_features_log.append(('com_log', tr.ColumnsSelectorTransformer(cols2log, False)))
-numeric_features_log.append(('log', tr.LogTransformer()))
-numeric_log_pipeline = Pipeline(numeric_features_log)
-
-numeric_features = []
-numeric_features.append(('selector', tr.TypeSelectorTransformer(np.number)))
-numeric_features.append(('split_numeric', FeatureUnion([('sl', numeric_nolog_pipeline), ('l', numeric_log_pipeline)])))
-numeric_pipeline = Pipeline(numeric_features)
-
-# Categorical Features
-categorical_features = []
-categorical_features.append(('selector', tr.TypeSelectorTransformer('object')))
-categorical_features.append(('convert', tr.Convert2CategoryTransformer()))
-#categorical_features.append(('labeler', tr.StringIndexer()))
-categorical_features.append(('hot_encode', tr.HotEncodeTransformer()))
-categorical_pipeline = Pipeline(categorical_features)
-
-second_pipeline = Pipeline([('features', 
-                             FeatureUnion([
-                                     ('boolean', boolean_pipeline),
-                                     ('numericals', numeric_pipeline),
-                                     ('categoricals', categorical_pipeline)
-                                     ])),
-                 #('overall_features', tr.FeatureEngineeringTransformer()),
+basic_pipeline = Pipeline([('convert', tr.Convert2CategoryTransformer(["MSSubClass", "MoSold"])),
+                 ('missing', tr.HandleMissingTransformer()),
+                 ('date_related_features', tr.DateRelatedFeaturesTransformer()),
                  #('more_features', tr.MoreFeaturesTransformer()),
+                 #('encode_features', tr.EncodeTransformer()),
                  #('neighbourhood_features', tr.NeighbourhoodRelatedFeaturesTransformer()),
                  ])
 
 train_X = basic_pipeline.fit_transform(train, train_y)
 test_X = basic_pipeline.fit_transform(test)
 
-#nlog_cols = []
-#for (s, t) in basic_pipeline.named_steps.items():
-#    if hasattr(t, "columns"):
-#        nlog_cols += t.columns
-#print(nlog_cols)
+cols2Bin = ["MasVnrArea", "BsmtFinSF1", "BsmtFinSF2", "LowQualFinSF", "EnclosedPorch", "3SsnPorch", "ScreenPorch", "PoolArea"]
+
+lb = LabelBinarizer()
+train_X.CentralAir = lb.fit_transform(train_X.CentralAir)
+test_X.CentralAir = lb.transform(test_X.CentralAir)
+
+for c in cols2Bin:
+    binarizer = Binarizer()
+    train_X[c] = binarizer.fit_transform(train_X[c].values.reshape(-1, 1))
+    test_X[c] = binarizer.fit_transform(test_X[c].values.reshape(-1, 1))
+
+cols2log = list(set(pp.log_transform(train_X)).union(set(pp.log_transform(test_X))))
+
+log_transformation = tr.LogTransformer()
+log_transformation.fit(train_X[cols2log])
+train_X[cols2log] = log_transformation.fit_transform(train_X[cols2log])
+test_X[cols2log] = log_transformation.transform(test_X[cols2log])
+
+second_pipeline = Pipeline([
+                 #('have_stuff_features', tr.HaveStuffTransformer()),
+                 ('hot_encode', tr.HotEncodeTransformer()),
+                 ])
 
 train_X = second_pipeline.fit_transform(train_X, train_y)
 test_X = second_pipeline.fit_transform(test_X)
 
+train_X, test_X = train_X.align(test_X, join='outer', axis=1, fill_value = 0)
+
+#train_X.T[train_X.T.duplicated()]
+#train_X.drop(["GarageFinish_No", "GarageQual_No", "GarageType_No"], axis=1, inplace = True)
+#test_X.drop(["GarageFinish_No", "GarageQual_No", "GarageType_No"], axis=1, inplace = True)
+
 third_pipeline = Pipeline([('scaler', RobustScaler()),
-                           ('low_variance', VarianceThreshold()),
-                           ('fu', FeatureUnion([
-                                   #('pca', PCA(n_components=10)),
-                                   #('kbest', SelectKBest(mutual_info_regression, k=110)),
-                                   ('reduce_dim_lasso', SelectFromModel(Lasso(alpha=0.0004, random_state = seed))),
-                                   #('reduce_dim_rfe', RFE(Lasso(alpha=0.0004), 115, step=10))
-                                   #('reduce_dim_rf', SelectFromModel(RandomForestRegressor(n_estimators = 500, 
-                                   #                                                     max_features = 0.4, 
-                                   #                                                     min_samples_split = 4,
-                                   #                                                     random_state = seed), threshold = "mean")),
-                                   ])),
+                           ('low_variance', VarianceThreshold(0.98 * (1 - 0.98))),
+                           ('reduce_dim', SelectFromModel(Lasso(alpha=0.0004, random_state = seed))),
                            ])
+
+#features_variance = fs.list_features_low_variance(train_X, train_y, .98)
+
+#train_X = train_X[features_variance]
+#test_X = test_X[features_variance]
+
+#importances_linear = fs.get_feature_importance(model_ENet, train_X, train_y)
+#fs.plot_features_importances(importances_linear, show_importance_zero = False)
+
+#importances_tree = fs.get_feature_importance(XGBRegressor(max_features=0.4), train_X, train_y)
+#fs.plot_features_importances(importances_tree, show_importance_zero = False)
+
+features_select_from_model, pipe_select_from_model = fs.remove_features_from_model(estimator = Lasso(alpha=0.0004), 
+                                                          scaler = RobustScaler(), X = train_X, y = train_y)
+
 
 train_X_reduced = third_pipeline.fit_transform(train_X, train_y)
 test_X_reduced = third_pipeline.transform(test_X)
@@ -150,14 +129,14 @@ model_rforest = RandomForestRegressor(n_estimators = 300, max_features = 0.4,
                                       min_samples_split = 4,
                                       random_state=seed)
 
-model_GBoost = GradientBoostingRegressor(n_estimators=1000, learning_rate=0.03,
+model_GBoost = GradientBoostingRegressor(n_estimators=2000, learning_rate=0.03,
                                    max_depth=3, max_features=0.4,
                                    min_samples_leaf=20, min_samples_split=10, 
                                    loss='huber', random_state = seed)
 
 model_xgb = XGBRegressor(colsample_bytree=0.35, gamma=0.027, 
                              learning_rate=0.03, max_depth=4, 
-                             min_child_weight=1.7817, n_estimators=1000,
+                             min_child_weight=1.7817, n_estimators=3000,
                              reg_alpha=0.43, reg_lambda=0.88,
                              subsample=0.5213, silent=1,
                              random_state = seed)
@@ -188,9 +167,11 @@ tree_models.append(("GBoost", model_GBoost))
 tree_models.append(("xgb", model_xgb))
 tree_models.append(("lgb", model_lgb))
 
-linear_results = pp.get_cross_validate(linear_models, train_X_reduced, train_y.ravel(), 
-                                       folds = 10, repetitions = 3, seed = seed, train_score = False, jobs = 2)
-print(linear_results)
+for s in range(100, 501, 100):
+    linear_results = pp.get_cross_validate(linear_models, train_X_reduced, train_y.ravel(), 
+                                       folds = 10, repetitions = 1, seed = s, train_score = False, jobs = 2)
+    #print(linear_results)
+    print(linear_results.iloc[0, [0,1,2]])
 
 
 tree_results = pp.get_cross_validate(tree_models, train_X_reduced, train_y.ravel(), 
@@ -198,7 +179,7 @@ tree_results = pp.get_cross_validate(tree_models, train_X_reduced, train_y.ravel
 print(tree_results)
 
 averaged_models = em.AveragingModels(models = [model_lgb, model_KRR, model_svr])
-stacked_averaged_models = em.StackingAveragedModels(base_models = [model_svr, model_lgb], meta_model = model_KRR)
+stacked_averaged_models = em.StackingAveragedModels(base_models = [model_ridge, model_svr, model_lgb], meta_model = model_KRR)
 averaged_plus = em.AveragingModels(models = [averaged_models, model_GBoost, model_xgb], weights = [0.7, 0.2, 0.1])
 averaged_plus_plus = em.AveragingModels(models = [stacked_averaged_models, model_GBoost, model_xgb], weights = [0.7, 0.2, 0.1])
 
@@ -212,16 +193,19 @@ ensemble_models.append(("averaged_plus", averaged_plus))
 ensemble_models.append(("averaged_plus_plus", averaged_plus_plus))
 ensemble_models.append(("averaged_full", avg_full))
 
-ensemble_results = pp.get_cross_validate(ensemble_models, train_X_reduced, train_y.ravel(), 
-                                     folds = 10, repetitions = 3, seed = seed, train_score = False)
-print(ensemble_results)
+for s in range(100, 501, 100):
+    ensemble_results = pp.get_cross_validate(ensemble_models, train_X_reduced, train_y.ravel(), 
+                                     folds = 10, repetitions = 1, seed = s, train_score = False)
+    print(ensemble_results)
+    print(ensemble_results.iloc[0, [0,1,2]])
 
-make_submission(averaged_models, train_X_reduced, train_y, test_X_reduced, filename = 'submission_avg.csv')
+make_submission(averaged_models, train_X_reduced, train_y, test_X_reduced, 
+                filename = pp.get_submission_file_name(ensemble_results))
 
 
 import cv_lab as cvl
-hyperparameters = {'alpha':np.linspace(0.2,1.0,20)}
-hpg = cvl.HousePricesGridCV(KernelRidge(kernel='polynomial', degree=2, coef0=2.0, gamma=0.0032),
+hyperparameters = {'C':np.linspace(25,100,20)}
+hpg = cvl.HousePricesGridCV(SVR(epsilon = 0.0774, gamma = 0.0004, kernel = 'rbf'),
                             hyperparameters = hyperparameters, n_folds = 10, seed = seed)
 hpg.fit(train_X_reduced, train_y.ravel())
 hpg.get_best_results()

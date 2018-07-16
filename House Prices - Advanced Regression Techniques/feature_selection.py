@@ -17,7 +17,12 @@ def get_feature_importance(estimator, X, y):
     pipe_importance = Pipeline([('scaler', RobustScaler()),
                               ('estimator', estimator)])
     pipe_importance.fit(X, y)
-    importances = pd.DataFrame({"Feature Importance":pipe_importance.named_steps['estimator'].coef_}, index=X.columns)
+    if(hasattr(estimator, "feature_importance")):
+        importances = pd.DataFrame({"Feature Importance":pipe_importance.named_steps['estimator'].feature_importance()}, index=X.columns)
+    elif(hasattr(estimator, "feature_importances_")):
+        importances = pd.DataFrame({"Feature Importance":pipe_importance.named_steps['estimator'].feature_importances_}, index=X.columns)
+    else:
+        importances = pd.DataFrame({"Feature Importance":pipe_importance.named_steps['estimator'].coef_}, index=X.columns)
     importances.sort_values("Feature Importance", ascending=False, inplace = True)
     return (importances)
 
@@ -25,7 +30,7 @@ def plot_features_importances(df_importances, show_importance_zero = False):
     if show_importance_zero:
         df_importances.sort_values("Feature Importance").plot(kind="barh",figsize=(15,50))
     else:
-        df_importances[df_importances["Feature Importance"]!=0].sort_values("Feature Importance").plot(kind="barh",figsize=(15,30))
+        df_importances[df_importances["Feature Importance"]!=0].sort_values("Feature Importance").plot(kind="barh",figsize=(15,50))
     plt.xticks(rotation=90)
     plt.show()
 
