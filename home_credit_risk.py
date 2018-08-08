@@ -11,13 +11,30 @@ def make_submission(model, X_train, y_train, X_test, filename = 'submission.csv'
 
 train, test = pp.read_train_test(train_file = 'application_train.csv', test_file = 'application_test.csv')
 
+cat_cols = pp.get_dtype_columns(train, [np.dtype(object)])
+cat_cols2encode = [c for c in cat_cols if len(train[c].value_counts(dropna=False)) <= 3]
+
+le = LabelEncoder()
+for col in cat_cols2encode:
+    le.fit(train[col])
+    train[col] = le.transform(train[col])
+    test[col] = le.transform(test[col])
+
 # CATEGORICAL MISSING
 print(pp.check_missing(train[pp.get_categorical_missing_cols(train)]))
 print(pp.check_missing(test[pp.get_categorical_missing_cols(test)]))
 
-cat_missing_trans = pp.HandleMissingModeTransformer()
-train = cat_missing_trans.fit_transform(train)
-test = cat_missing_trans.fit_transform(test)
+train.NAME_TYPE_SUITE.fillna("Unaccompanied", inplace= True)
+test.NAME_TYPE_SUITE.fillna("Unaccompanied", inplace= True)
+
+# High density missing categorical columns - deserves a column when performing get_dummies
+# FONDKAPREMONT_MODE, WALLSMATERIAL_MODE, HOUSETYPE_MODE, EMERGENCYSTATE_MODE, OCCUPATION_TYPE
+
+train = pd.get_dummies(train, dummy_na = True)
+test = pd.get_dummies(test, dummy_na = True)
+
+train_labels = train['TARGET']
+train, test = train.align(test, join = 'inner', axis = 1)
 
 # NUMERICAL MISSING
 print(pp.check_missing(train[pp.get_numerical_missing_cols(train)]))
@@ -27,16 +44,16 @@ num_missing_trans = pp.HandleMissingMedianTransformer()
 train = num_missing_trans.fit_transform(train)
 test = num_missing_trans.fit_transform(test)
 
-train_y = train.TARGET
-train_X = train.drop(['SK_ID_CURR', 'TARGET'], axis=1)
+train_y = train_labels
+train_X = train.drop(['SK_ID_CURR'], axis=1)
 
 ids = test[['SK_ID_CURR']]
 test_X = test.drop(['SK_ID_CURR'], axis=1)
 
-train_X = pp.hot_encode(train_X)
-test_X = pp.hot_encode(test_X)
+#train_X = pp.hot_encode(train_X)
+#test_X = pp.hot_encode(test_X)
 
-train_X, test_X = train_X.align(test_X, join='outer', axis=1, fill_value = 0)
+#train_X, test_X = train_X.align(test_X, join='outer', axis=1, fill_value = 0)
 
 from sklearn.linear_model import LogisticRegression
 log_reg = LogisticRegression(C = 0.0001)
@@ -48,20 +65,6 @@ submit['TARGET'] = log_reg_pred
 
 submit.head()
 submit.to_csv('log_reg_baseline.csv', index = False)
-
-
-
-
-types_cols = pp.get_dtypes_columns(train)
-num_cols = [types_cols[np.dtype(object)]]
-
-        
-flag_missing_train = [c for c in train.columns if c.startswith("FLAG_") and train[c].isnull().sum() > 0]
-flag_missing_test = [c for c in test.columns if c.startswith("FLAG_") and test[c].isnull().sum() > 0]
-
-missing_train = pp.check_missing(train)
-missing_test = pp.check_missing(test)
-
 
 
 import seaborn as sns

@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 import os
 
+import seaborn as sns
+import matplotlib.pyplot as plt
 from sklearn.base import BaseEstimator, TransformerMixin
 
 DATADIR = "input/"
@@ -128,3 +130,25 @@ def hot_encode(X, columns = None):
         return pd.get_dummies(X)
     else:
         return pd.get_dummies(X, columns = columns)
+    
+def correlation_target(dataset, target = "TARGET"):
+    corr = dataset.corr()[target].sort_values(ascending = False)
+    return(corr)
+    
+def correlation_matrix(dataset, target = 'TARGET', nvar = 10):
+    corrmat = dataset.corr()
+    cols = corrmat.nlargest(nvar + 1, target)[target].index
+    cm = np.corrcoef(dataset[cols].values.T)
+    sns.set(font_scale=1.25)
+    sns.heatmap(cm, cbar=True, annot=True, square=True, fmt='.2f', 
+                     annot_kws={'size': 10}, yticklabels=cols.values, xticklabels=cols.values)
+    plt.show()
+    return list(cols[1:])
+
+def get_domain_knowledge_features(X):
+    X_domain = X.copy()
+    X_domain['CREDIT_INCOME_PERCENT'] = X_domain['AMT_CREDIT'] / X_domain['AMT_INCOME_TOTAL']
+    X_domain['ANNUITY_INCOME_PERCENT'] = X_domain['AMT_ANNUITY'] / X_domain['AMT_INCOME_TOTAL']
+    X_domain['CREDIT_TERM'] = X_domain['AMT_ANNUITY'] / X_domain['AMT_CREDIT']
+    X_domain['DAYS_EMPLOYED_PERCENT'] = X_domain['DAYS_EMPLOYED'] / X_domain['DAYS_BIRTH']
+    return (X_domain)
