@@ -3,6 +3,14 @@ import numpy as np
 import preprocessing as pp
 from sklearn.preprocessing import LabelEncoder
 
+# Suppress warnings from pandas
+import matplotlib.pyplot as plt
+import seaborn as sns
+import warnings
+warnings.filterwarnings('ignore')
+
+plt.style.use('fivethirtyeight')
+
 def make_submission(model, X_train, y_train, X_test, filename = 'submission.csv'):
     model.fit(X_train, y_train)
     predicted = model.predict_proba(test_X)[:, 1]
@@ -10,6 +18,37 @@ def make_submission(model, X_train, y_train, X_test, filename = 'submission.csv'
     my_submission.to_csv(filename, index=False)
 
 train, test = pp.read_train_test(train_file = 'application_train.csv', test_file = 'application_test.csv')
+bureau = pp.read_dataset_csv()
+bureau_balance = pp.read_dataset_csv(file = "bureau_balance.csv")
+
+bureau_counts, bureau_agg, bureau_balance_by_client = pp.features(bureau, bureau_balance)
+
+original_features = list(train.columns)
+print('Original Number of Features: ', len(original_features))
+
+# Merge with the value counts of bureau
+#train = train.merge(bureau_counts, on = 'SK_ID_CURR', how = 'left')
+train = train.merge(bureau_counts, left_on = 'SK_ID_CURR', right_index = True, how = 'left')
+# Merge with the stats of bureau
+train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
+# Merge with the monthly information grouped by client
+train = train.merge(bureau_balance_by_client, on = 'SK_ID_CURR', how = 'left')
+
+new_features = list(train.columns)
+print('Number of features using previous loans from other institutions data: ', len(new_features))
+
+# Merge with the value counts of bureau
+#test = test.merge(bureau_counts, on = 'SK_ID_CURR', how = 'left')
+test = test.merge(bureau_counts, left_on = 'SK_ID_CURR', right_index = True, how = 'left')
+# Merge with the stats of bureau
+test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
+# Merge with the value counts of bureau balance
+test = test.merge(bureau_balance_by_client, on = 'SK_ID_CURR', how = 'left')
+
+print('Shape of Testing Data: ', test.shape)
+
+train.fillna(0, inplace= True)
+test.fillna(0, inplace= True)
 
 cat_cols = pp.get_dtype_columns(train, [np.dtype(object)])
 cat_cols2encode = [c for c in cat_cols if len(train[c].value_counts(dropna=False)) <= 2]
@@ -61,11 +100,17 @@ test_X = test.drop(['SK_ID_CURR'], axis=1)
 
 # Scale each feature to 0-1
 from sklearn.preprocessing import MinMaxScaler
-scaler = MinMaxScaler(feature_range = (0, 1))
+from sklearn.pipeline import Pipeline
+from sklearn.feature_selection import VarianceThreshold
 
-scaler.fit(train_X)
-train_X = scaler.transform(train_X)
-test_X = scaler.transform(test_X)
+pipeline = Pipeline([('scaler', MinMaxScaler(feature_range = (0, 1))),
+                           ('low_variance', VarianceThreshold()),
+                           #('reduce_dim', SelectFromModel(Lasso(alpha=0.0004, random_state = seed))),
+                           ])
+
+pipeline.fit(train_X)
+train_X = pipeline.transform(train_X)
+test_X = pipeline.transform(test_X)
 
 #train_X = pp.hot_encode(train_X)
 #test_X = pp.hot_encode(test_X)
@@ -116,7 +161,7 @@ for train_indices, valid_indices in k_fold.split(features):
     train_features, train_labels = train_X[train_indices], train_y[train_indices]
     valid_features, valid_labels = train_X[valid_indices], train_y[valid_indices]
     
-    model = lgb.LGBMClassifier(n_estimators=10000, objective = 'binary', 
+    model = lgb.LGBMClassifier(n_estimators=100, objective = 'binary', 
                                    class_weight = 'balanced', learning_rate = 0.05, 
                                    reg_alpha = 0.1, reg_lambda = 0.1, 
                                    subsample = 0.8, n_jobs = -1, random_state = 50)
@@ -128,4 +173,11 @@ for train_indices, valid_indices in k_fold.split(features):
     
     best_iteration = model.best_iteration_
     
-model.fit(train_X, train_y, eval_metric = 'auc', verbose = 200)
+model.fit(train_X, train_y, eval_metric = 'auc', verbose = 20)
+pred = model.predict_proba(test_X)[:, 1]
+
+submit = ids
+submit['TARGET'] = pred
+
+submit.head(100)
+submit.to_csv('lgbm_feature_eng.csv', index = False)
