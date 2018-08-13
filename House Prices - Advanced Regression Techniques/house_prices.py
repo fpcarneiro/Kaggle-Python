@@ -14,7 +14,7 @@ from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, E
 from sklearn.preprocessing import RobustScaler, LabelBinarizer, Binarizer
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.feature_selection import VarianceThreshold, SelectFromModel
+from sklearn.feature_selection import VarianceThreshold, SelectFromModel, RFE
 
 def make_submission(model, X_train, y_train, X_test, filename = 'submission.csv'):
     model.fit(X_train, y_train)
@@ -54,6 +54,12 @@ basic_pipeline = Pipeline([('convert', tr.Convert2CategoryTransformer(["MSSubCla
 train_X = basic_pipeline.fit_transform(train, train_y)
 test_X = basic_pipeline.fit_transform(test)
 
+n, c = pp.get_feature_groups(train_X)
+
+me = tr.MeanEncoderTransformer(c)
+me.fit(train_X, train_y)
+train_X = me.transform(train_X, train_y)
+
 cols2Bin = ["MasVnrArea", "BsmtFinSF1", "BsmtFinSF2", "LowQualFinSF", "EnclosedPorch", "3SsnPorch", "ScreenPorch", "PoolArea"]
 
 lb = LabelBinarizer()
@@ -82,13 +88,14 @@ test_X = second_pipeline.fit_transform(test_X)
 
 train_X, test_X = train_X.align(test_X, join='outer', axis=1, fill_value = 0)
 
-#train_X.T[train_X.T.duplicated()]
-#train_X.drop(["GarageFinish_No", "GarageQual_No", "GarageType_No"], axis=1, inplace = True)
-#test_X.drop(["GarageFinish_No", "GarageQual_No", "GarageType_No"], axis=1, inplace = True)
+duplicated = pp.duplicate_columns(train_X)
+train_X.drop(list(duplicated.keys()), axis=1, inplace = True)
+test_X.drop(list(duplicated.keys()), axis=1, inplace = True)
 
 third_pipeline = Pipeline([('scaler', RobustScaler()),
                            ('low_variance', VarianceThreshold(0.98 * (1 - 0.98))),
-                           ('reduce_dim', SelectFromModel(Lasso(alpha=0.0004, random_state = seed))),
+                           #('reduce_dim', SelectFromModel(Lasso(alpha=0.0004, random_state = seed))),
+                           ('reduce_dim_rfe', RFE(Lasso(alpha=0.0004, random_state = seed), 106, step=10))
                            ])
 
 #features_variance = fs.list_features_low_variance(train_X, train_y, .98)
@@ -102,8 +109,8 @@ third_pipeline = Pipeline([('scaler', RobustScaler()),
 #importances_tree = fs.get_feature_importance(XGBRegressor(max_features=0.4), train_X, train_y)
 #fs.plot_features_importances(importances_tree, show_importance_zero = False)
 
-features_select_from_model, pipe_select_from_model = fs.remove_features_from_model(estimator = Lasso(alpha=0.0004), 
-                                                          scaler = RobustScaler(), X = train_X, y = train_y)
+#features_select_from_model, pipe_select_from_model = fs.remove_features_from_model(estimator = Lasso(alpha=0.0004), 
+#                                                          scaler = RobustScaler(), X = train_X, y = train_y)
 
 
 train_X_reduced = third_pipeline.fit_transform(train_X, train_y)

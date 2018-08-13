@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 from scipy.stats import skew
+from sklearn.model_selection import KFold
 
 quality_scale = {"No" : 0, "Po" : 1, "Fa" : 2, "TA" : 3, "Gd" : 4, "Ex" : 5}
 basement_scale = {"No" : 0, "Unf" : 1, "LwQ": 2, "Rec" : 3, "BLQ" : 4, "ALQ" : 5, "GLQ" : 6}
@@ -408,3 +409,26 @@ class UniqueTransformer(BaseEstimator, TransformerMixin):
     
     def transform(self, X, y=None):
         return X[:, self.unique_indices_]
+    
+class MeanEncoderTransformer(BaseEstimator, TransformerMixin):
+    def __init__(self, cols = ["MSZoning"]):
+        self.cols = cols
+
+    def transform(self, X, y=None):
+        X_ = X.copy()
+        X_["target"] = y
+        
+        for col in self.cols:
+            X_[col + "_mean_target"] = self.global_mean
+        
+        kf = KFold(n_splits = 5, shuffle=True, random_state = 123)
+        for train_index, val_index in kf.split(X_):
+            for col in self.cols:
+                means = X_.iloc[val_index][col].map(X_.iloc[train_index].groupby(col).target.mean())
+                X_.loc[val_index, col + "_mean_target"] = means.values
+        return X_.drop(["target"], axis=1)
+
+    def fit(self, X, y=None):
+        self.global_mean = y.mean()
+        return self
+    

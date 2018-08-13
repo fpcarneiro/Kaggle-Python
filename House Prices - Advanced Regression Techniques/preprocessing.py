@@ -396,20 +396,27 @@ def get_constant_features(dataset):
 def equal_columns(col_a, col_b):
     return np.all(col_a == col_b)
 
-def duplicate_columns(df, return_dataframe = False, verbose = False):
+from tqdm import tqdm
+def duplicate_columns(df, return_dataframe = False, verbose = False, progress = True):
     '''
         a function to detect and possibly remove duplicated columns for a pandas dataframe
     '''
     # group columns by dtypes, only the columns of the same dtypes can be duplicate of each other
     groups = df.columns.to_series().groupby(df.dtypes).groups
     duplicated_columns = {}
- 
+    
+
+        
     for dtype, col_names in groups.items():
         column_values = df[col_names]
         num_columns = len(col_names)
- 
+        
+        if progress == True:
+            it = tqdm(range(num_columns))
+        else:
+            it = range(num_columns)
         # find duplicated columns by checking pairs of columns, store first column name if duplicate exist 
-        for i in range(num_columns):
+        for i in it:
             column_i = column_values.iloc[:,i]
             for j in range(i + 1, num_columns):
                 column_j = column_values.iloc[:,j]
