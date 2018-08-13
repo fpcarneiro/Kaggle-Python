@@ -62,8 +62,8 @@ num_missing_trans = pp.HandleMissingMedianTransformer()
 train = num_missing_trans.fit_transform(train)
 test = num_missing_trans.fit_transform(test)
 
-bureau_agg = pp.get_engineered_features(bureau, group_var = 'SK_ID_CURR', df_name = 'bureau')
-bureau_balance_agg = pp.get_engineered_features(bureau_balance, group_var = 'SK_ID_BUREAU', df_name = 'bureau_balance')
+#bureau_agg = pp.get_engineered_features(bureau, group_var = 'SK_ID_CURR', df_name = 'bureau')
+#bureau_balance_agg = pp.get_engineered_features(bureau_balance, group_var = 'SK_ID_BUREAU', df_name = 'bureau_balance')
 
 # FEATURE ENGINEERING
 train = pp.get_domain_knowledge_features(train)
@@ -75,23 +75,21 @@ original_features = list(train.columns)
 print('Original Number of Features: ', len(original_features))
 
 # Merge with the value counts of bureau
-#train = train.merge(bureau_counts, on = 'SK_ID_CURR', how = 'left')
-train = train.merge(bureau_counts, left_on = 'SK_ID_CURR', right_index = True, how = 'left')
-# Merge with the stats of bureau
 train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
+#train = train.merge(bureau_agg, left_on = 'SK_ID_CURR', right_index = True, how = 'left')
+
 # Merge with the monthly information grouped by client
-train = train.merge(bureau_balance_by_client, on = 'SK_ID_CURR', how = 'left')
+train = train.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
 
 new_features = list(train.columns)
 print('Number of features using previous loans from other institutions data: ', len(new_features))
 
 # Merge with the value counts of bureau
-#test = test.merge(bureau_counts, on = 'SK_ID_CURR', how = 'left')
-test = test.merge(bureau_counts, left_on = 'SK_ID_CURR', right_index = True, how = 'left')
-# Merge with the stats of bureau
 test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
+#test = test.merge(bureau_counts, left_on = 'SK_ID_CURR', right_index = True, how = 'left')
+
 # Merge with the value counts of bureau balance
-test = test.merge(bureau_balance_by_client, on = 'SK_ID_CURR', how = 'left')
+test = test.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
 
 print('Shape of Testing Data: ', test.shape)
 
@@ -105,19 +103,68 @@ train_X = train.drop(['SK_ID_CURR', 'TARGET'], axis=1)
 ids = test[['SK_ID_CURR']]
 test_X = test.drop(['SK_ID_CURR'], axis=1)
 
+duplicated = pp.duplicate_columns(train_X)
+train_X.drop(list(duplicated.keys()), axis=1, inplace = True)
+test_X.drop(list(duplicated.keys()), axis=1, inplace = True)
+
 # Scale each feature to 0-1
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.pipeline import Pipeline
 from sklearn.feature_selection import VarianceThreshold
 
 pipeline = Pipeline([('scaler', MinMaxScaler(feature_range = (0, 1))),
-                           ('low_variance', VarianceThreshold()),
+                           ('low_variance', VarianceThreshold(0.998 * (1 - 0.998))),
                            #('reduce_dim', SelectFromModel(Lasso(alpha=0.0004, random_state = seed))),
                            ])
 
 pipeline.fit(train_X)
 train_X = pipeline.transform(train_X)
 test_X = pipeline.transform(test_X)
+
+
+from sklearn.ensemble import GradientBoostingClassifier
+
+clf = GradientBoostingClassifier(n_estimators=1000, learning_rate=0.05, max_depth=5, subsample = 0.8, 
+                                 random_state=0)
+clf.fit(train_X, train_y)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 #train_X = pp.hot_encode(train_X)
 #test_X = pp.hot_encode(test_X)
@@ -159,6 +206,34 @@ submit.to_csv('rf_baseline.csv', index = False)
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import lightgbm as lgb
 from sklearn.model_selection import KFold
 # Create the kfold object
@@ -168,7 +243,7 @@ for train_indices, valid_indices in k_fold.split(features):
     train_features, train_labels = train_X[train_indices], train_y[train_indices]
     valid_features, valid_labels = train_X[valid_indices], train_y[valid_indices]
     
-    model = lgb.LGBMClassifier(n_estimators=100, objective = 'binary', 
+    model = lgb.LGBMClassifier(n_estimators=1200, objective = 'binary', 
                                    class_weight = 'balanced', learning_rate = 0.05, 
                                    reg_alpha = 0.1, reg_lambda = 0.1, 
                                    subsample = 0.8, n_jobs = -1, random_state = 50)
