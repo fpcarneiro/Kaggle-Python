@@ -1,7 +1,12 @@
 import pandas as pd
 import numpy as np
 import preprocessing as pp
+import evaluation as ev
 from sklearn.preprocessing import LabelEncoder
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.ensemble import RandomForestClassifier
+import lightgbm as lgb
 
 # Suppress warnings from pandas
 import matplotlib.pyplot as plt
@@ -122,14 +127,24 @@ train_X = pipeline.transform(train_X)
 test_X = pipeline.transform(test_X)
 
 
-from sklearn.ensemble import GradientBoostingClassifier
-
-clf = GradientBoostingClassifier(n_estimators=1000, learning_rate=0.05, max_depth=5, subsample = 0.8, 
-                                 random_state=0)
-clf.fit(train_X, train_y)
 
 
+model_gbc = GradientBoostingClassifier(n_estimators=100, learning_rate=0.05, max_depth=5, subsample = 0.8, random_state=0)
+model_logc = LogisticRegression(C = 0.0001)
+model_rf = RandomForestClassifier(n_estimators = 100, random_state = 50, verbose = 1, n_jobs = -1)
+model_lgb = lgb.LGBMClassifier(n_estimators=1200, objective = 'binary', 
+                                   class_weight = 'balanced', learning_rate = 0.05, 
+                                   reg_alpha = 0.1, reg_lambda = 0.1, 
+                                   subsample = 0.8, n_jobs = -1, random_state = 50)
 
+#Linear Models
+models = []
+models.append(("lr", model_logc))
+models.append(("lgb", model_lgb))
+
+seed = 2018
+results = ev.get_cross_validate(models, train_X, train_y, 
+                                       folds = 3, repetitions = 1, seed = seed, train_score = False)
 
 
 
@@ -171,8 +186,8 @@ clf.fit(train_X, train_y)
 
 #train_X, test_X = train_X.align(test_X, join='outer', axis=1, fill_value = 0)
 
-from sklearn.linear_model import LogisticRegression
-log_reg = LogisticRegression(C = 0.0001)
+
+
 log_reg.fit(train_X, train_y)
 log_reg_pred = log_reg.predict_proba(test_X)[:, 1]
 
@@ -186,9 +201,9 @@ submit.head()
 submit.to_csv('log_reg_baseline.csv', index = False)
 
 
-from sklearn.ensemble import RandomForestClassifier
+
 # Make the random forest classifier
-random_forest = RandomForestClassifier(n_estimators = 100, random_state = 50, verbose = 1, n_jobs = -1)
+
 
 # Train on the training data
 random_forest.fit(train_X, train_y)
@@ -234,7 +249,7 @@ submit.to_csv('rf_baseline.csv', index = False)
 
 
 
-import lightgbm as lgb
+
 from sklearn.model_selection import KFold
 # Create the kfold object
 k_fold = KFold(n_splits = 10, shuffle = True, random_state = 50)
