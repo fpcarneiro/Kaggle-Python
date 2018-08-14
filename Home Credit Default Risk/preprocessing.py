@@ -13,8 +13,8 @@ DATADIR = "input/"
 def list_files(input_dir = "input/"):
     return (os.listdir(input_dir))
 
-def read_dataset_csv(input_dir = "input/", file = "bureau.csv"):
-    return (pd.read_csv(input_dir + file))
+def read_dataset_csv(input_dir = "input/", filename = ""):
+    return (pd.read_csv(input_dir + filename))
 
 def read_train_test(input_dir = "input/", train_file = 'train.csv', test_file = 'test.csv'):
     train = pd.read_csv(input_dir + train_file)
@@ -185,7 +185,7 @@ def agg_numeric(df, group_var, df_name):
     # Remove id variables other than grouping variable
     for col in df:
         if col != group_var and 'SK_ID' in col:
-            df = df.drop(columns = col)
+            df = df.drop(columns = col, axis = 1)
             
     group_ids = df[group_var]
     numeric_df = df.select_dtypes(include = ['number'])
@@ -308,6 +308,14 @@ def get_engineered_features(df, group_var, df_name):
     numerical_agg = agg_numeric(df, group_var = group_var, df_name = df_name)
     return numerical_agg.merge(categorical_agg, on = group_var, how = 'inner')
 
+def get_engineered_features_from_file(filename, group_var, df_name, drop_cols = None):
+    if drop_cols == None:
+        df = read_dataset_csv(filename = filename)
+    else:
+        df = read_dataset_csv(filename = filename).drop(drop_cols, axis=1)
+    df_agg = get_engineered_features(df, group_var, df_name)
+    return df_agg
+
 def features(bureau, bureau_balance):    
     bureau_agg = get_engineered_features(bureau.drop(['SK_ID_BUREAU'], axis=1), group_var = 'SK_ID_CURR', df_name = 'bureau')    
     bureau_balance_agg = get_engineered_features(bureau_balance, group_var = 'SK_ID_BUREAU', df_name = 'bureau_balance')
@@ -319,7 +327,7 @@ def features(bureau, bureau_balance):
     
     return bureau_agg, bureau_balance_by_client
 
-def aggregate_client(df, group_vars, df_names):
+def aggregate_client(df, parent_df, group_vars, df_names):
     """Aggregate a dataframe with data at the loan level 
     at the client level
     
@@ -335,52 +343,16 @@ def aggregate_client(df, group_vars, df_names):
         Each client will have a single row with all the numeric data aggregated
     """
     
-    # Aggregate the numeric columns
-    df_agg = agg_numeric(df, parent_var = group_vars[0], df_name = df_names[0])
+    bureau_balance_agg = get_engineered_features(df, group_var = group_vars[0], df_name = df_names[0])
+
+    # Merge to include the SK_ID_CURR
+    #bureau_by_loan = bureau[['SK_ID_BUREAU', 'SK_ID_CURR']].merge(bureau_balance_agg, on = 'SK_ID_BUREAU', how = 'left')
+    df_by_loan = bureau_balance_agg.merge(parent_df[[group_vars[0], group_vars[1]]], on = group_vars[0], how = 'left')
+    print(df_by_loan.columns)
+    df_by_loan = df_by_loan.drop(columns = [group_vars[0]])
+    # Aggregate the stats for each client
+    df_by_client = agg_numeric(df_by_loan, group_var = group_vars[1], df_name = df_names[1])
     
-    # If there are categorical variables
-    if any(df.dtypes == 'category'):
-    
-        # Count the categorical columns
-        df_counts = agg_categorical(df, parent_var = group_vars[0], df_name = df_names[0])
-
-        # Merge the numeric and categorical
-        df_by_loan = df_counts.merge(df_agg, on = group_vars[0], how = 'outer')
-
-        gc.enable()
-        del df_agg, df_counts
-        gc.collect()
-
-        # Merge to get the client id in dataframe
-        df_by_loan = df_by_loan.merge(df[[group_vars[0], group_vars[1]]], on = group_vars[0], how = 'left')
-
-        # Remove the loan id
-        df_by_loan = df_by_loan.drop(columns = [group_vars[0]])
-
-        # Aggregate numeric stats by column
-        df_by_client = agg_numeric(df_by_loan, parent_var = group_vars[1], df_name = df_names[1])
-
-        
-    # No categorical variables
-    else:
-        # Merge to get the client id in dataframe
-        df_by_loan = df_agg.merge(df[[group_vars[0], group_vars[1]]], on = group_vars[0], how = 'left')
-        
-        gc.enable()
-        del df_agg
-        gc.collect()
-        
-        # Remove the loan id
-        df_by_loan = df_by_loan.drop(columns = [group_vars[0]])
-        
-        # Aggregate numeric stats by column
-        df_by_client = agg_numeric(df_by_loan, parent_var = group_vars[1], df_name = df_names[1])
-        
-    # Memory management
-    gc.enable()
-    del df, df_by_loan
-    gc.collect()
-
     return df_by_client
 
 def equal_columns(col_a, col_b):

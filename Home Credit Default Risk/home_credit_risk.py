@@ -14,11 +14,22 @@ import seaborn as sns
 import warnings
 warnings.filterwarnings('ignore')
 
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.pipeline import Pipeline
+from sklearn.feature_selection import VarianceThreshold
+
+import gc
+
 plt.style.use('fivethirtyeight')
 
 train, test = pp.read_train_test(train_file = 'application_train.csv', test_file = 'application_test.csv')
 
 train = train[train['CODE_GENDER'] != 'XNA']
+
+train['DAYS_EMPLOYED_ANOM'] = train["DAYS_EMPLOYED"] == 365243
+train["DAYS_EMPLOYED"].replace({365243: np.nan}, inplace = True)
+test['DAYS_EMPLOYED_ANOM'] = test["DAYS_EMPLOYED"] == 365243
+test["DAYS_EMPLOYED"].replace({365243: np.nan}, inplace = True)
 
 cat_cols = pp.get_dtype_columns(train, [np.dtype(object)])
 cat_cols2encode = [c for c in cat_cols if len(train[c].value_counts(dropna=False)) <= 2]
@@ -50,23 +61,37 @@ train['TARGET'] = train_labels
 print(pp.check_missing(train[pp.get_numerical_missing_cols(train)]))
 print(pp.check_missing(test[pp.get_numerical_missing_cols(test)]))
 
-train['DAYS_EMPLOYED_ANOM'] = train["DAYS_EMPLOYED"] == 365243
-train["DAYS_EMPLOYED"].replace({365243: np.nan}, inplace = True)
-test['DAYS_EMPLOYED_ANOM'] = test["DAYS_EMPLOYED"] == 365243
-test["DAYS_EMPLOYED"].replace({365243: np.nan}, inplace = True)
-
 num_missing_trans = pp.HandleMissingMedianTransformer()
 train = num_missing_trans.fit_transform(train)
 test = num_missing_trans.fit_transform(test)
 
-bureau = pp.read_dataset_csv()
-bureau_balance = pp.read_dataset_csv(file = "bureau_balance.csv")
+del le, col, cat_cols, cat_cols2encode, num_missing_trans, train_labels
+gc.collect()
 
-print(pp.check_missing(bureau[pp.get_numerical_missing_cols(bureau)]))
+bureau = pp.read_dataset_csv(filename = "bureau.csv")
+bureau_agg = pp.get_engineered_features(bureau.drop(['SK_ID_BUREAU'], axis=1), group_var = 'SK_ID_CURR', df_name = 'bureau')
+train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
+test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
 
-bureau['AMT_ANNUITY_WAS_MISSING'] = bureau.AMT_ANNUITY.isnull()
-bureau.drop(['AMT_ANNUITY'], axis=1, inplace = True)
-bureau = pp.handle_missing_median(bureau, pp.get_numerical_missing_cols(bureau))
+#del bureau, bureau_agg
+#gc.collect()
+
+bureau_balance = pp.read_dataset_csv(filename = "bureau_balance.csv")
+bureau_balance_agg = pp.aggregate_client(bureau_balance, bureau, group_vars = ['SK_ID_BUREAU', 'SK_ID_CURR'], df_names = ['bureau_balance', 'client'])
+train = train.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
+test = test.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
+
+gc.enable()
+del bureau, bureau_agg, bureau_balance, bureau_balance_agg
+gc.collect()
+
+previous_application = pp.read_dataset_csv(filename = "previous_application.csv")
+installments_payments = pp.read_dataset_csv(filename = "installments_payments.csv")
+
+
+
+
+bureau_balance = pp.get_engineered_features_from_file(filename = "bureau_balance.csv", group_var = 'SK_ID_BUREAU', df_name = 'bureau_balance', drop_cols = None)
 
 previous_application = pp.read_dataset_csv(file = "previous_application.csv")
 
@@ -90,7 +115,7 @@ original_features = list(train.columns)
 print('Original Number of Features: ', len(original_features))
 
 # Merge with the value counts of bureau
-train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
+
 #train = train.merge(bureau_agg, left_on = 'SK_ID_CURR', right_index = True, how = 'left')
 
 # Merge with the monthly information grouped by client
@@ -100,7 +125,7 @@ new_features = list(train.columns)
 print('Number of features using previous loans from other institutions data: ', len(new_features))
 
 # Merge with the value counts of bureau
-test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
+
 #test = test.merge(bureau_counts, left_on = 'SK_ID_CURR', right_index = True, how = 'left')
 
 # Merge with the value counts of bureau balance
@@ -115,119 +140,57 @@ test.fillna(0, inplace= True)
 train_y = train['TARGET']
 train_X = train.drop(['SK_ID_CURR', 'TARGET'], axis=1)
 
-ids = test[['SK_ID_CURR']]
+ids = test['SK_ID_CURR']
 test_X = test.drop(['SK_ID_CURR'], axis=1)
 
 duplicated = pp.duplicate_columns(train_X)
 train_X.drop(list(duplicated.keys()), axis=1, inplace = True)
 test_X.drop(list(duplicated.keys()), axis=1, inplace = True)
 
-# Scale each feature to 0-1
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.pipeline import Pipeline
-from sklearn.feature_selection import VarianceThreshold
-
-pipeline = Pipeline([('scaler', MinMaxScaler(feature_range = (0, 1))),
-                           ('low_variance', VarianceThreshold(0.998 * (1 - 0.998))),
-                           #('reduce_dim', SelectFromModel(Lasso(alpha=0.0004, random_state = seed))),
-                           ])
+pipeline = Pipeline([
+                     ('scaler', MinMaxScaler(feature_range = (0, 1))),
+                     ('low_variance', VarianceThreshold(0.998 * (1 - 0.998))),
+                     #('reduce_dim', SelectFromModel(Lasso(alpha=0.0004, random_state = seed))),
+                     ])
 
 pipeline.fit(train_X)
 train_X = pipeline.transform(train_X)
 test_X = pipeline.transform(test_X)
 
-
-
-
-model_gbc = GradientBoostingClassifier(n_estimators=100, learning_rate=0.05, max_depth=5, subsample = 0.8, random_state=0)
-model_logc = LogisticRegression(C = 0.0001)
-model_rf = RandomForestClassifier(n_estimators = 100, random_state = 50, verbose = 1, n_jobs = -1)
-model_lgb = lgb.LGBMClassifier(n_estimators=1500, objective = 'binary', 
+def go_train(trainset_X, trainset_y):
+    model_gbc = GradientBoostingClassifier(n_estimators=10, learning_rate=0.05, max_depth=5, subsample = 0.8, random_state=0)
+    model_logc = LogisticRegression(C = 0.0001)
+    model_rf = RandomForestClassifier(n_estimators = 10)
+    model_lgb = lgb.LGBMClassifier(n_estimators=10, objective = 'binary', 
                                    class_weight = 'balanced', learning_rate = 0.05, 
                                    reg_alpha = 0.1, reg_lambda = 0.1, 
                                    subsample = 0.8, n_jobs = -1, random_state = 50)
 
-#Linear Models
-models = []
-models.append(("lr", model_logc))
-models.append(("lgb", model_lgb))
+    models = []
+    models.append(("lr", model_logc))
+    models.append(("gb", model_gbc))
+    models.append(("lgb", model_lgb))
+    models.append(("rf", model_rf))
 
-seed = 2018
-results = ev.get_cross_validate(models, train_X, train_y, 
+    seed = 2018
+    results = ev.get_cross_validate(models, trainset_X, trainset_y, 
                                        folds = 3, repetitions = 1, seed = seed, train_score = False)
+    return results
+
+def submit(model, trainset_X, trainset_y, ids, testset_X, filename = 'submission.csv'):
+    model.fit(trainset_X, trainset_y)
+    predicted = model.predict_proba(testset_X)[:, 1]
+    my_submission = pd.DataFrame({'SK_ID_CURR': ids, 'TARGET': predicted})
+    my_submission.to_csv(filename, index=False)
+    
+    
+    
+submit(model_lgb, train_X, train_y, ids, test_X)
 
 
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#train_X = pp.hot_encode(train_X)
-#test_X = pp.hot_encode(test_X)
-
-#train_X, test_X = train_X.align(test_X, join='outer', axis=1, fill_value = 0)
-
-
-
-log_reg.fit(train_X, train_y)
-log_reg_pred = log_reg.predict_proba(test_X)[:, 1]
-
-# Feature names
-features = list(train.drop(['SK_ID_CURR', 'TARGET'], axis=1).columns)
-
-submit = ids
-submit['TARGET'] = log_reg_pred
-
-submit.head()
-submit.to_csv('log_reg_baseline.csv', index = False)
-
-
-
-# Make the random forest classifier
-
-
-# Train on the training data
-random_forest.fit(train_X, train_y)
-# Extract feature importances
-feature_importance_values = random_forest.feature_importances_
-feature_importances = pd.DataFrame({'feature': features, 'importance': feature_importance_values})
-
-# Make predictions on the test data
-predictions = random_forest.predict_proba(test_X)[:, 1]
-
-submit['TARGET'] = predictions
-
-submit.head(100)
-submit.to_csv('rf_baseline.csv', index = False)
 
 
 
@@ -280,11 +243,3 @@ for train_indices, valid_indices in k_fold.split(features):
     
     best_iteration = model.best_iteration_
     
-model.fit(train_X, train_y, eval_metric = 'auc', verbose = 20)
-pred = model.predict_proba(test_X)[:, 1]
-
-submit = ids
-submit['TARGET'] = pred
-
-submit.head(100)
-submit.to_csv('lgbm_feature_eng.csv', index = False)
