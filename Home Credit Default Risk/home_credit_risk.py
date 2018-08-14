@@ -16,15 +16,7 @@ warnings.filterwarnings('ignore')
 
 plt.style.use('fivethirtyeight')
 
-def make_submission(model, X_train, y_train, X_test, filename = 'submission.csv'):
-    model.fit(X_train, y_train)
-    predicted = model.predict_proba(test_X)[:, 1]
-    my_submission = pd.DataFrame({'SK_ID_CURR': ids, 'TARGET': predicted})
-    my_submission.to_csv(filename, index=False)
-
 train, test = pp.read_train_test(train_file = 'application_train.csv', test_file = 'application_test.csv')
-bureau = pp.read_dataset_csv()
-bureau_balance = pp.read_dataset_csv(file = "bureau_balance.csv")
 
 train = train[train['CODE_GENDER'] != 'XNA']
 
@@ -67,6 +59,22 @@ num_missing_trans = pp.HandleMissingMedianTransformer()
 train = num_missing_trans.fit_transform(train)
 test = num_missing_trans.fit_transform(test)
 
+bureau = pp.read_dataset_csv()
+bureau_balance = pp.read_dataset_csv(file = "bureau_balance.csv")
+
+print(pp.check_missing(bureau[pp.get_numerical_missing_cols(bureau)]))
+
+bureau['AMT_ANNUITY_WAS_MISSING'] = bureau.AMT_ANNUITY.isnull()
+bureau.drop(['AMT_ANNUITY'], axis=1, inplace = True)
+bureau = pp.handle_missing_median(bureau, pp.get_numerical_missing_cols(bureau))
+
+previous_application = pp.read_dataset_csv(file = "previous_application.csv")
+
+previous_application.drop(['RATE_INTEREST_PRIMARY', 'RATE_INTEREST_PRIVILEGED'], axis=1, inplace = True)
+previous_application = pp.handle_missing_median(previous_application, pp.get_numerical_missing_cols(previous_application))
+
+installments_payments = pp.read_dataset_csv(file = "installments_payments.csv")
+
 #bureau_agg = pp.get_engineered_features(bureau, group_var = 'SK_ID_CURR', df_name = 'bureau')
 #bureau_balance_agg = pp.get_engineered_features(bureau_balance, group_var = 'SK_ID_BUREAU', df_name = 'bureau_balance')
 
@@ -75,6 +83,8 @@ train = pp.get_domain_knowledge_features(train)
 test = pp.get_domain_knowledge_features(test)
 
 bureau_agg, bureau_balance_agg = pp.features(bureau, bureau_balance)
+previous_application_agg = pp.get_engineered_features(previous_application, group_var = 'SK_ID_CURR', df_name = 'previous')
+
 
 original_features = list(train.columns)
 print('Original Number of Features: ', len(original_features))
@@ -132,7 +142,7 @@ test_X = pipeline.transform(test_X)
 model_gbc = GradientBoostingClassifier(n_estimators=100, learning_rate=0.05, max_depth=5, subsample = 0.8, random_state=0)
 model_logc = LogisticRegression(C = 0.0001)
 model_rf = RandomForestClassifier(n_estimators = 100, random_state = 50, verbose = 1, n_jobs = -1)
-model_lgb = lgb.LGBMClassifier(n_estimators=1200, objective = 'binary', 
+model_lgb = lgb.LGBMClassifier(n_estimators=1500, objective = 'binary', 
                                    class_weight = 'balanced', learning_rate = 0.05, 
                                    reg_alpha = 0.1, reg_lambda = 0.1, 
                                    subsample = 0.8, n_jobs = -1, random_state = 50)
@@ -258,7 +268,7 @@ for train_indices, valid_indices in k_fold.split(features):
     train_features, train_labels = train_X[train_indices], train_y[train_indices]
     valid_features, valid_labels = train_X[valid_indices], train_y[valid_indices]
     
-    model = lgb.LGBMClassifier(n_estimators=1200, objective = 'binary', 
+    model = lgb.LGBMClassifier(n_estimators=1500, objective = 'binary', 
                                    class_weight = 'balanced', learning_rate = 0.05, 
                                    reg_alpha = 0.1, reg_lambda = 0.1, 
                                    subsample = 0.8, n_jobs = -1, random_state = 50)

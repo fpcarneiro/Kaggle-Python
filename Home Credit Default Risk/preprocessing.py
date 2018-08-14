@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 import os
 
+from scipy.stats import skew, kurtosis
+
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -67,7 +69,7 @@ def add_columns_was_missing(X):
     cols_with_missing = [col for col in X.columns if X[col].isnull().any()]
     new_columns = []
     for col in cols_with_missing:
-        new_col = col + '_was_missing'
+        new_col = col + '_WAS_MISSING'
         new_columns.append(new_col)
         X[new_col] = X[col].isnull()
     return X
@@ -154,6 +156,8 @@ def get_domain_knowledge_features(X):
     X_domain['ANNUITY_INCOME_PERCENT'] = X_domain['AMT_ANNUITY'] / X_domain['AMT_INCOME_TOTAL']
     X_domain['CREDIT_TERM'] = X_domain['AMT_ANNUITY'] / X_domain['AMT_CREDIT']
     X_domain['DAYS_EMPLOYED_PERCENT'] = X_domain['DAYS_EMPLOYED'] / X_domain['DAYS_BIRTH']
+    X_domain['INCOME_CREDIT_PERC'] = X_domain['AMT_INCOME_TOTAL'] / X_domain['AMT_CREDIT']
+    X_domain['INCOME_PER_PERSON'] = X_domain['AMT_INCOME_TOTAL'] / X_domain['CNT_FAM_MEMBERS']
     return (X_domain)
 
 def agg_numeric(df, group_var, df_name):
@@ -188,7 +192,7 @@ def agg_numeric(df, group_var, df_name):
     numeric_df[group_var] = group_ids
 
     # Group by the specified variable and calculate the statistics
-    agg = numeric_df.groupby(group_var).agg(['count', 'mean', 'max', 'min', 'sum']).reset_index()
+    agg = numeric_df.groupby(group_var).agg(['count', 'mean', 'max', 'min', 'sum', 'std']).reset_index()
 
     # Need to create new column names
     columns = [group_var]
@@ -314,6 +318,70 @@ def features(bureau, bureau_balance):
     bureau_balance_by_client = agg_numeric(bureau_by_loan.drop(['SK_ID_BUREAU'], axis=1), group_var = 'SK_ID_CURR', df_name = 'client')
     
     return bureau_agg, bureau_balance_by_client
+
+def aggregate_client(df, group_vars, df_names):
+    """Aggregate a dataframe with data at the loan level 
+    at the client level
+    
+    Args:
+        df (dataframe): data at the loan level
+        group_vars (list of two strings): grouping variables for the loan 
+        and then the client (example ['SK_ID_PREV', 'SK_ID_CURR'])
+        names (list of two strings): names to call the resulting columns
+        (example ['cash', 'client'])
+        
+    Returns:
+        df_client (dataframe): aggregated numeric stats at the client level. 
+        Each client will have a single row with all the numeric data aggregated
+    """
+    
+    # Aggregate the numeric columns
+    df_agg = agg_numeric(df, parent_var = group_vars[0], df_name = df_names[0])
+    
+    # If there are categorical variables
+    if any(df.dtypes == 'category'):
+    
+        # Count the categorical columns
+        df_counts = agg_categorical(df, parent_var = group_vars[0], df_name = df_names[0])
+
+        # Merge the numeric and categorical
+        df_by_loan = df_counts.merge(df_agg, on = group_vars[0], how = 'outer')
+
+        gc.enable()
+        del df_agg, df_counts
+        gc.collect()
+
+        # Merge to get the client id in dataframe
+        df_by_loan = df_by_loan.merge(df[[group_vars[0], group_vars[1]]], on = group_vars[0], how = 'left')
+
+        # Remove the loan id
+        df_by_loan = df_by_loan.drop(columns = [group_vars[0]])
+
+        # Aggregate numeric stats by column
+        df_by_client = agg_numeric(df_by_loan, parent_var = group_vars[1], df_name = df_names[1])
+
+        
+    # No categorical variables
+    else:
+        # Merge to get the client id in dataframe
+        df_by_loan = df_agg.merge(df[[group_vars[0], group_vars[1]]], on = group_vars[0], how = 'left')
+        
+        gc.enable()
+        del df_agg
+        gc.collect()
+        
+        # Remove the loan id
+        df_by_loan = df_by_loan.drop(columns = [group_vars[0]])
+        
+        # Aggregate numeric stats by column
+        df_by_client = agg_numeric(df_by_loan, parent_var = group_vars[1], df_name = df_names[1])
+        
+    # Memory management
+    gc.enable()
+    del df, df_by_loan
+    gc.collect()
+
+    return df_by_client
 
 def equal_columns(col_a, col_b):
     return np.all(col_a == col_b)
