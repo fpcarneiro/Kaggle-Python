@@ -348,7 +348,6 @@ def aggregate_client(df, parent_df, group_vars, df_names):
     # Merge to include the SK_ID_CURR
     #bureau_by_loan = bureau[['SK_ID_BUREAU', 'SK_ID_CURR']].merge(bureau_balance_agg, on = 'SK_ID_BUREAU', how = 'left')
     df_by_loan = bureau_balance_agg.merge(parent_df[[group_vars[0], group_vars[1]]], on = group_vars[0], how = 'left')
-    print(df_by_loan.columns)
     df_by_loan = df_by_loan.drop(columns = [group_vars[0]])
     # Aggregate the stats for each client
     df_by_client = agg_numeric(df_by_loan, group_var = group_vars[1], df_name = df_names[1])

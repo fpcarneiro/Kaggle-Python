@@ -75,23 +75,28 @@ test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
 
 #del bureau, bureau_agg
 #gc.collect()
-
+group_vars = ['SK_ID_BUREAU', 'SK_ID_CURR']
 bureau_balance = pp.read_dataset_csv(filename = "bureau_balance.csv")
-bureau_balance_agg = pp.aggregate_client(bureau_balance, bureau, group_vars = ['SK_ID_BUREAU', 'SK_ID_CURR'], df_names = ['bureau_balance', 'client'])
+bureau_balance_agg = pp.aggregate_client(bureau_balance, bureau[group_vars], group_vars = group_vars, 
+                                         df_names = ['bureau_balance', 'client'])
 train = train.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
 test = test.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
 
 gc.enable()
-del bureau, bureau_agg, bureau_balance, bureau_balance_agg
+del bureau, bureau_agg, bureau_balance, bureau_balance_agg, group_vars
 gc.collect()
 
 previous_application = pp.read_dataset_csv(filename = "previous_application.csv")
+previous_application.drop(['RATE_INTEREST_PRIMARY', 'RATE_INTEREST_PRIVILEGED'], axis=1, inplace = True)
+previous_application_agg = pp.get_engineered_features(previous_application.drop(['SK_ID_PREV'], axis=1), group_var = 'SK_ID_CURR', df_name = 'previous')
+train = train.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
+test = test.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
+
+gc.enable()
+del previous_application, previous_application_agg
+gc.collect()
+
 installments_payments = pp.read_dataset_csv(filename = "installments_payments.csv")
-
-
-
-
-bureau_balance = pp.get_engineered_features_from_file(filename = "bureau_balance.csv", group_var = 'SK_ID_BUREAU', df_name = 'bureau_balance', drop_cols = None)
 
 previous_application = pp.read_dataset_csv(file = "previous_application.csv")
 
@@ -157,20 +162,20 @@ pipeline.fit(train_X)
 train_X = pipeline.transform(train_X)
 test_X = pipeline.transform(test_X)
 
-def go_train(trainset_X, trainset_y):
-    model_gbc = GradientBoostingClassifier(n_estimators=10, learning_rate=0.05, max_depth=5, subsample = 0.8, random_state=0)
+def go_cv(trainset_X, trainset_y):
+    model_gbc = GradientBoostingClassifier(n_estimators=100, learning_rate=0.05, max_depth=5, subsample = 0.8, random_state=0)
     model_logc = LogisticRegression(C = 0.0001)
-    model_rf = RandomForestClassifier(n_estimators = 10)
-    model_lgb = lgb.LGBMClassifier(n_estimators=10, objective = 'binary', 
+    model_rf = RandomForestClassifier(n_estimators = 100)
+    model_lgb = lgb.LGBMClassifier(n_estimators=2000, objective = 'binary', 
                                    class_weight = 'balanced', learning_rate = 0.05, 
                                    reg_alpha = 0.1, reg_lambda = 0.1, 
                                    subsample = 0.8, n_jobs = -1, random_state = 50)
 
     models = []
-    models.append(("lr", model_logc))
-    models.append(("gb", model_gbc))
+    #models.append(("lr", model_logc))
+    #models.append(("gb", model_gbc))
     models.append(("lgb", model_lgb))
-    models.append(("rf", model_rf))
+    #models.append(("rf", model_rf))
 
     seed = 2018
     results = ev.get_cross_validate(models, trainset_X, trainset_y, 
@@ -184,7 +189,7 @@ def submit(model, trainset_X, trainset_y, ids, testset_X, filename = 'submission
     my_submission.to_csv(filename, index=False)
     
     
-    
+train_cv = go_cv(train_X, train_y)    
 submit(model_lgb, train_X, train_y, ids, test_X)
 
 
