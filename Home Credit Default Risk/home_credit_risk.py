@@ -21,6 +21,8 @@ from sklearn.feature_selection import VarianceThreshold, SelectFromModel
 
 import gc
 
+import feature_selection as fs
+
 plt.style.use('fivethirtyeight')
 
 train, test = pp.read_train_test(train_file = 'application_train.csv', test_file = 'application_test.csv')
@@ -192,12 +194,19 @@ test_X.drop(list(duplicated.keys()), axis=1, inplace = True)
 pipeline = Pipeline([
                      ('scaler', MinMaxScaler(feature_range = (0, 1))),
                      ('low_variance', VarianceThreshold()),
-                     ('reduce_dim', SelectFromModel(LogisticRegression(C = 0.0001))),
+                     #('reduce_dim', SelectFromModel(LogisticRegression(C = 0.0001))),
                      ])
 
 pipeline.fit(train_X, train_y)
 train_X = pipeline.transform(train_X)
 test_X = pipeline.transform(test_X)
+
+
+importances_tree_2 = fs.get_feature_importance(lgb.LGBMClassifier(n_estimators=100, objective = 'binary', 
+                                   class_weight = 'balanced', learning_rate = 0.05, 
+                                   reg_alpha = 0.1, reg_lambda = 0.1, 
+                                   subsample = 0.8, n_jobs = -1, random_state = 50), train_X, train_y)
+fs.plot_features_importances(importances_tree_2, show_importance_zero = False)
 
 def go_cv(trainset_X, trainset_y):
     model_gbc = GradientBoostingClassifier(n_estimators=100, learning_rate=0.05, max_depth=5, subsample = 0.8, random_state=0)

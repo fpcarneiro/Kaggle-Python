@@ -168,7 +168,11 @@ def correlation_matrix(dataset, target = 'TARGET', nvar = 10):
 
 def get_domain_knowledge_features(X):
     X_domain = X.copy()
-    flag_doc_cols = [c for c in list(X_domain.columns) if c.startswith("FLAG_DOCUMENT_") ]
+    exc_cols = ['FONDKAPREMONT_MODE', 'HOUSETYPE_MODE','WALLSMATERIAL_MODE', 'EMERGENCYSTATE_MODE']
+    flag_doc_cols = [c for c in X_domain.columns if c.startswith("FLAG_DOCUMENT_")]
+    client_living_avg_cols = [c for c in X_domain.columns if c.endswith("_AVG")]
+    client_living_mode_cols = [c for c in X_domain.columns if c.endswith("_MODE") and c not in exc_cols]
+    client_living_median_cols = [c for c in X_domain.columns if c.endswith("_MEDI")]
     
     X_domain['CREDIT_INCOME_PERCENT'] = X_domain['AMT_CREDIT'] / X_domain['AMT_INCOME_TOTAL']
     X_domain['CREDIT_GOODS_PRICE_PERCENT'] = X_domain['AMT_CREDIT'] / X_domain['AMT_GOODS_PRICE']
