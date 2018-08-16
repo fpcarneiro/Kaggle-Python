@@ -32,6 +32,22 @@ def check_missing(dataset):
     missing_table = mis_val_table.drop(mis_val_table[mis_val_table.iloc[:, 1] == 0].index).sort_values('% of Total Values', ascending=False).round(2)
     return(missing_table)
     
+def check_flag_doc_cols(dataset):
+    all_data_absolute = dataset.sum()
+    all_data_percent = (dataset.sum() / len(dataset)) * 100
+    mis_val_table = pd.concat([all_data_absolute, all_data_percent], axis=1)
+    mis_val_table.rename(columns = {0 : 'FLAG 1 Count', 1 : '% of Total'}, inplace = True)
+    missing_table = mis_val_table.drop(mis_val_table[mis_val_table.iloc[:, 1] == 0].index).sort_values('% of Total', ascending=False).round(2)
+    return(missing_table)
+    
+def check_categorical_cols_values(dataset, col = "ORGANIZATION_TYPE"):
+    all_data_absolute = dataset.loc[:, col].value_counts().rename("Count")
+    all_data_percent = ((dataset.loc[:, col].value_counts() / len(dataset)) * 100).rename("% of Total")
+    mis_val_table = pd.concat([all_data_absolute, all_data_percent], axis=1)
+    #mis_val_table.rename(columns = {0 : 'Count', 1 : '% of Total'}, inplace = True)
+    missing_table = mis_val_table.drop(mis_val_table[mis_val_table.iloc[:, 1] == 0].index).sort_values('% of Total', ascending=False).round(2)
+    return(missing_table)
+    
 def get_feature_groups(dataset):
     num_columns = list(dataset.select_dtypes(exclude=['object', 'category']).columns)
     cat_columns = list(dataset.select_dtypes(include=['object', 'category']).columns)
@@ -152,13 +168,25 @@ def correlation_matrix(dataset, target = 'TARGET', nvar = 10):
 
 def get_domain_knowledge_features(X):
     X_domain = X.copy()
+    flag_doc_cols = [c for c in list(X_domain.columns) if c.startswith("FLAG_DOCUMENT_") ]
+    
     X_domain['CREDIT_INCOME_PERCENT'] = X_domain['AMT_CREDIT'] / X_domain['AMT_INCOME_TOTAL']
+    X_domain['CREDIT_GOODS_PRICE_PERCENT'] = X_domain['AMT_CREDIT'] / X_domain['AMT_GOODS_PRICE']
     X_domain['ANNUITY_INCOME_PERCENT'] = X_domain['AMT_ANNUITY'] / X_domain['AMT_INCOME_TOTAL']
     X_domain['CREDIT_TERM'] = X_domain['AMT_ANNUITY'] / X_domain['AMT_CREDIT']
     X_domain['DAYS_EMPLOYED_PERCENT'] = X_domain['DAYS_EMPLOYED'] / X_domain['DAYS_BIRTH']
     X_domain['INCOME_CREDIT_PERC'] = X_domain['AMT_INCOME_TOTAL'] / X_domain['AMT_CREDIT']
     X_domain['INCOME_PER_PERSON'] = X_domain['AMT_INCOME_TOTAL'] / X_domain['CNT_FAM_MEMBERS']
-    return (X_domain)
+    #X_domain['INCOME_PER_CHILD'] = X_domain['AMT_INCOME_TOTAL'] / X_domain['CNT_CHILDREN']
+    X_domain["HOW_MANY_DOCUMENTS"] = X_domain.loc[:, flag_doc_cols].sum(axis=1)
+    X_domain["EXT_SOURCE_SUM"] = X_domain.loc[:, ['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']].sum(axis=1)
+    X_domain["EXT_SOURCE_AVG"] = X_domain.loc[:, ['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']].mean(axis=1)
+    
+    cols_flag_del = ['FLAG_DOCUMENT_16', 'FLAG_DOCUMENT_18', 'FLAG_DOCUMENT_11', 'FLAG_DOCUMENT_9', 'FLAG_DOCUMENT_13',
+'FLAG_DOCUMENT_14', 'FLAG_DOCUMENT_15', 'FLAG_DOCUMENT_19', 'FLAG_DOCUMENT_20', 'FLAG_DOCUMENT_21', 'FLAG_DOCUMENT_17',
+'FLAG_DOCUMENT_7', 'FLAG_DOCUMENT_4', 'FLAG_DOCUMENT_2', 'FLAG_DOCUMENT_10', 'FLAG_DOCUMENT_12']
+    
+    return (X_domain.drop(cols_flag_del, axis = 1))
 
 def agg_numeric(df, group_var, df_name):
     """Aggregates the numeric values in a dataframe. This can
@@ -185,7 +213,7 @@ def agg_numeric(df, group_var, df_name):
     # Remove id variables other than grouping variable
     for col in df:
         if col != group_var and 'SK_ID' in col:
-            df = df.drop(columns = col, axis = 1)
+            df = df.drop([col], axis = 1)
             
     group_ids = df[group_var]
     numeric_df = df.select_dtypes(include = ['number'])
@@ -351,7 +379,7 @@ def aggregate_client(df, parent_df, group_vars, df_names):
     # Merge to include the SK_ID_CURR
     #bureau_by_loan = bureau[['SK_ID_BUREAU', 'SK_ID_CURR']].merge(bureau_balance_agg, on = 'SK_ID_BUREAU', how = 'left')
     df_by_loan = df_agg.merge(parent_df[[group_vars[0], group_vars[1]]], on = group_vars[0], how = 'left')
-    df_by_loan = df_by_loan.drop(columns = [group_vars[0]])
+    df_by_loan = df_by_loan.drop([group_vars[0]], axis=1)
     # Aggregate the stats for each client
     df_by_client = agg_numeric(df_by_loan, group_var = group_vars[1], df_name = df_names[1])
     
@@ -378,7 +406,7 @@ def aggregate_client_2(df, group_vars, df_names):
     # Merge to include the SK_ID_CURR
     #bureau_by_loan = bureau[['SK_ID_BUREAU', 'SK_ID_CURR']].merge(bureau_balance_agg, on = 'SK_ID_BUREAU', how = 'left')
     df_by_loan = df_agg.merge(df[[group_vars[0], group_vars[1]]], on = group_vars[0], how = 'left')
-    df_by_loan = df_by_loan.drop(columns = [group_vars[0]])
+    df_by_loan = df_by_loan.drop([group_vars[0]], axis = 1)
     # Aggregate the stats for each client
     df_by_client = agg_numeric(df_by_loan, group_var = group_vars[1], df_name = df_names[1])
     

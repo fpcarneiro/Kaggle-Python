@@ -25,6 +25,7 @@ def get_cross_validate(medels_list, X, y, folds = 5, repetitions = 1, seed = 201
         results = pd.DataFrame(columns = [model_name, score_mean, score_std, scores_field])
         
     for name, model in medels_list:
+        print(name)
         scores =  cross_validate_model(model, X, y, n_folds = folds, repetitions = repetitions, seed = seed, 
                                        return_train_score = train_score, jobs = jobs)
         test_score = scores["test_score"]

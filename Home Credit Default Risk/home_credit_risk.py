@@ -27,6 +27,25 @@ train, test = pp.read_train_test(train_file = 'application_train.csv', test_file
 
 train = train[train['CODE_GENDER'] != 'XNA']
 
+train.loc[:, 'HOUR_APPR_PROCESS_START'] = train.loc[:, 'HOUR_APPR_PROCESS_START'].astype('object')
+test.loc[:, 'HOUR_APPR_PROCESS_START'] = test.loc[:, 'HOUR_APPR_PROCESS_START'].astype('object')
+
+# Decrease number of categories in ORGANIZATION_TYPE
+train_ot_table = pp.check_categorical_cols_values(train, col = "ORGANIZATION_TYPE")
+s_train = set(train_ot_table[train_ot_table.loc[:, "% of Total"] < 1].index)
+
+test_ot_table = pp.check_categorical_cols_values(test, col = "ORGANIZATION_TYPE")
+s_test = set(test_ot_table[test_ot_table.loc[:, "% of Total"] < 1].index)
+
+l_union = list(s_train.union(s_test))
+
+train.loc[train.ORGANIZATION_TYPE.isin(l_union), 'ORGANIZATION_TYPE'] = "Other 2"
+test.loc[test.ORGANIZATION_TYPE.isin(l_union), 'ORGANIZATION_TYPE'] = "Other 2"
+
+gc.enable()
+del l_union, train_ot_table, test_ot_table
+gc.collect()
+
 train['DAYS_EMPLOYED_ANOM'] = train["DAYS_EMPLOYED"] == 365243
 train["DAYS_EMPLOYED"].replace({365243: np.nan}, inplace = True)
 test['DAYS_EMPLOYED_ANOM'] = test["DAYS_EMPLOYED"] == 365243
@@ -69,31 +88,33 @@ test = num_missing_trans.fit_transform(test)
 del le, col, cat_cols, cat_cols2encode, num_missing_trans, train_labels
 gc.collect()
 
+train = pp.convert_types(train, print_info = True)
+test = pp.convert_types(test, print_info = True)
+
 # FEATURE ENGINEERING
 train = pp.get_domain_knowledge_features(train)
 test = pp.get_domain_knowledge_features(test)
 
-
-
-bureau = pp.read_dataset_csv(filename = "bureau.csv")
+bureau = pp.convert_types(pp.read_dataset_csv(filename = "bureau.csv"), print_info = True)
 bureau_agg = pp.get_engineered_features(bureau.drop(['SK_ID_BUREAU'], axis=1), group_var = 'SK_ID_CURR', df_name = 'bureau')
 train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
 test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
 
-#del bureau, bureau_agg
-#gc.collect()
+del bureau_agg
+gc.collect()
+
 group_vars = ['SK_ID_BUREAU', 'SK_ID_CURR']
-bureau_balance = pp.read_dataset_csv(filename = "bureau_balance.csv")
+bureau_balance = pp.convert_types(pp.read_dataset_csv(filename = "bureau_balance.csv"), print_info = True)
 bureau_balance_agg = pp.aggregate_client(bureau_balance, parent_df = bureau[group_vars], group_vars = group_vars, 
                                          df_names = ['bureau_balance', 'client'])
 train = train.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
 test = test.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
 
 gc.enable()
-del bureau, bureau_agg, bureau_balance, bureau_balance_agg, group_vars
+del bureau, bureau_balance, bureau_balance_agg, group_vars
 gc.collect()
 
-previous_application = pp.read_dataset_csv(filename = "previous_application.csv")
+previous_application = pp.convert_types(pp.read_dataset_csv(filename = "previous_application.csv"), print_info = True)
 previous_application.drop(['RATE_INTEREST_PRIMARY', 'RATE_INTEREST_PRIVILEGED'], axis=1, inplace = True)
 previous_application_agg = pp.get_engineered_features(previous_application.drop(['SK_ID_PREV'], axis=1), group_var = 'SK_ID_CURR', df_name = 'previous')
 train = train.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
@@ -179,16 +200,16 @@ train_X = pipeline.transform(train_X)
 test_X = pipeline.transform(test_X)
 
 def go_cv(trainset_X, trainset_y):
-    model_gbc = GradientBoostingClassifier(n_estimators=10, learning_rate=0.05, max_depth=5, subsample = 0.8, random_state=0)
+    model_gbc = GradientBoostingClassifier(n_estimators=100, learning_rate=0.05, max_depth=5, subsample = 0.8, random_state=0)
     model_logc = LogisticRegression(C = 0.0001)
-    model_rf = RandomForestClassifier(n_estimators = 10)
-    model_lgb = lgb.LGBMClassifier(n_estimators=10, objective = 'binary', 
+    model_rf = RandomForestClassifier(n_estimators = 100)
+    model_lgb = lgb.LGBMClassifier(n_estimators=100, objective = 'binary', 
                                    class_weight = 'balanced', learning_rate = 0.05, 
                                    reg_alpha = 0.1, reg_lambda = 0.1, 
                                    subsample = 0.8, n_jobs = -1, random_state = 50)
     model_xgb = XGBClassifier(colsample_bytree=0.35, gamma=0.027, 
                              learning_rate=0.03, max_depth=4, 
-                             min_child_weight=1.7817, n_estimators=10,
+                             min_child_weight=1.7817, n_estimators=100,
                              reg_alpha=0.43, reg_lambda=0.88,
                              subsample=0.5213, silent=1,
                              random_state = 0)
@@ -213,7 +234,7 @@ def submit(model, trainset_X, trainset_y, ids, testset_X, filename = 'submission
     
     
 train_cv = go_cv(train_X, train_y)
-submit(model_xgb, train_X, train_y, ids, test_X, filename = 'submission_xgb.csv')
+submit(model_lgb, train_X, train_y, ids, test_X, filename = 'submission_lgb.csv')
 
 
 
