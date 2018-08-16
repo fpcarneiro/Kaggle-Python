@@ -69,6 +69,12 @@ test = num_missing_trans.fit_transform(test)
 del le, col, cat_cols, cat_cols2encode, num_missing_trans, train_labels
 gc.collect()
 
+# FEATURE ENGINEERING
+train = pp.get_domain_knowledge_features(train)
+test = pp.get_domain_knowledge_features(test)
+
+
+
 bureau = pp.read_dataset_csv(filename = "bureau.csv")
 bureau_agg = pp.get_engineered_features(bureau.drop(['SK_ID_BUREAU'], axis=1), group_var = 'SK_ID_CURR', df_name = 'bureau')
 train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
@@ -78,7 +84,7 @@ test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
 #gc.collect()
 group_vars = ['SK_ID_BUREAU', 'SK_ID_CURR']
 bureau_balance = pp.read_dataset_csv(filename = "bureau_balance.csv")
-bureau_balance_agg = pp.aggregate_client(bureau_balance, bureau[group_vars], group_vars = group_vars, 
+bureau_balance_agg = pp.aggregate_client(bureau_balance, parent_df = bureau[group_vars], group_vars = group_vars, 
                                          df_names = ['bureau_balance', 'client'])
 train = train.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
 test = test.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
@@ -97,24 +103,33 @@ gc.enable()
 del previous_application, previous_application_agg
 gc.collect()
 
-installments_payments = pp.read_dataset_csv(filename = "installments_payments.csv")
+group_vars = ['SK_ID_PREV', 'SK_ID_CURR']
+cash = pp.convert_types(pp.read_dataset_csv(filename = "POS_CASH_balance.csv"), print_info=True)
+cash_agg = pp.aggregate_client_2(cash, group_vars = group_vars, df_names = ['cash', 'client'])
+train = train.merge(cash_agg, on = 'SK_ID_CURR', how = 'left')
+test = test.merge(cash_agg, on = 'SK_ID_CURR', how = 'left')
 
-previous_application = pp.read_dataset_csv(file = "previous_application.csv")
+gc.enable()
+del cash, cash_agg
+gc.collect()
 
-previous_application.drop(['RATE_INTEREST_PRIMARY', 'RATE_INTEREST_PRIVILEGED'], axis=1, inplace = True)
-previous_application = pp.handle_missing_median(previous_application, pp.get_numerical_missing_cols(previous_application))
+credit_card_balance = pp.convert_types(pp.read_dataset_csv(filename = "credit_card_balance.csv"), print_info=True)
+credit_card_balance_agg = pp.aggregate_client_2(credit_card_balance, group_vars = group_vars, df_names = ['credit', 'client'])
+train = train.merge(credit_card_balance_agg, on = 'SK_ID_CURR', how = 'left')
+test = test.merge(credit_card_balance_agg, on = 'SK_ID_CURR', how = 'left')
 
-installments_payments = pp.read_dataset_csv(file = "installments_payments.csv")
+gc.enable()
+del credit_card_balance, credit_card_balance_agg
+gc.collect()
 
-#bureau_agg = pp.get_engineered_features(bureau, group_var = 'SK_ID_CURR', df_name = 'bureau')
-#bureau_balance_agg = pp.get_engineered_features(bureau_balance, group_var = 'SK_ID_BUREAU', df_name = 'bureau_balance')
+installments_payments = pp.convert_types(pp.read_dataset_csv(filename = "installments_payments.csv"), print_info=True)
+installments_payments_agg = pp.aggregate_client_2(installments_payments, group_vars = group_vars, df_names = ['installments', 'client'])
+train = train.merge(installments_payments_agg, on = 'SK_ID_CURR', how = 'left')
+test = test.merge(installments_payments_agg, on = 'SK_ID_CURR', how = 'left')
 
-# FEATURE ENGINEERING
-train = pp.get_domain_knowledge_features(train)
-test = pp.get_domain_knowledge_features(test)
-
-bureau_agg, bureau_balance_agg = pp.features(bureau, bureau_balance)
-previous_application_agg = pp.get_engineered_features(previous_application, group_var = 'SK_ID_CURR', df_name = 'previous')
+gc.enable()
+del installments_payments, installments_payments_agg, group_vars
+gc.collect()
 
 
 original_features = list(train.columns)

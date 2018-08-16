@@ -234,7 +234,7 @@ def count_categorical(df, group_var, df_name):
     """
     
     # Select the categorical columns
-    categorical = pd.get_dummies(df.select_dtypes(include = ['object']))
+    categorical = pd.get_dummies(df.select_dtypes(include = ['object', 'category']))
 
     # Make sure to put the identifying id on the column
     categorical[group_var] = df[group_var]
@@ -304,9 +304,12 @@ def kde_target(var_name, df):
     print('Median value for loan that was repaid =     %0.4f' % avg_repaid)
 
 def get_engineered_features(df, group_var, df_name):
-    categorical_agg = count_categorical(df, group_var = group_var, df_name = df_name).reset_index()
     numerical_agg = agg_numeric(df, group_var = group_var, df_name = df_name)
-    return numerical_agg.merge(categorical_agg, on = group_var, how = 'inner')
+    if (any(df.dtypes == 'object') or any(df.dtypes == 'category')):
+        categorical_agg = count_categorical(df, group_var = group_var, df_name = df_name).reset_index()
+        return numerical_agg.merge(categorical_agg, on = group_var, how = 'inner')
+    else:
+        return(numerical_agg)
 
 def get_engineered_features_from_file(filename, group_var, df_name, drop_cols = None):
     if drop_cols == None:
@@ -343,11 +346,38 @@ def aggregate_client(df, parent_df, group_vars, df_names):
         Each client will have a single row with all the numeric data aggregated
     """
     
-    bureau_balance_agg = get_engineered_features(df, group_var = group_vars[0], df_name = df_names[0])
+    df_agg = get_engineered_features(df, group_var = group_vars[0], df_name = df_names[0])
 
     # Merge to include the SK_ID_CURR
     #bureau_by_loan = bureau[['SK_ID_BUREAU', 'SK_ID_CURR']].merge(bureau_balance_agg, on = 'SK_ID_BUREAU', how = 'left')
-    df_by_loan = bureau_balance_agg.merge(parent_df[[group_vars[0], group_vars[1]]], on = group_vars[0], how = 'left')
+    df_by_loan = df_agg.merge(parent_df[[group_vars[0], group_vars[1]]], on = group_vars[0], how = 'left')
+    df_by_loan = df_by_loan.drop(columns = [group_vars[0]])
+    # Aggregate the stats for each client
+    df_by_client = agg_numeric(df_by_loan, group_var = group_vars[1], df_name = df_names[1])
+    
+    return df_by_client
+
+def aggregate_client_2(df, group_vars, df_names):
+    """Aggregate a dataframe with data at the loan level 
+    at the client level
+    
+    Args:
+        df (dataframe): data at the loan level
+        group_vars (list of two strings): grouping variables for the loan 
+        and then the client (example ['SK_ID_PREV', 'SK_ID_CURR'])
+        names (list of two strings): names to call the resulting columns
+        (example ['cash', 'client'])
+        
+    Returns:
+        df_client (dataframe): aggregated numeric stats at the client level. 
+        Each client will have a single row with all the numeric data aggregated
+    """
+    
+    df_agg = get_engineered_features(df, group_var = group_vars[0], df_name = df_names[0])
+
+    # Merge to include the SK_ID_CURR
+    #bureau_by_loan = bureau[['SK_ID_BUREAU', 'SK_ID_CURR']].merge(bureau_balance_agg, on = 'SK_ID_BUREAU', how = 'left')
+    df_by_loan = df_agg.merge(df[[group_vars[0], group_vars[1]]], on = group_vars[0], how = 'left')
     df_by_loan = df_by_loan.drop(columns = [group_vars[0]])
     # Aggregate the stats for each client
     df_by_client = agg_numeric(df_by_loan, group_var = group_vars[1], df_name = df_names[1])
@@ -392,3 +422,44 @@ def duplicate_columns(df, return_dataframe = False, verbose = False, progress = 
     else:
         # return a dataframe with duplicated columns dropped 
         return df.drop(labels = list(duplicated_columns.keys()), axis = 1)
+    
+import sys
+
+def return_size(df):
+    """Return size of dataframe in gigabytes"""
+    return round(sys.getsizeof(df) / 1e9, 2)
+
+def convert_types(df, print_info = False):
+    
+    original_memory = df.memory_usage().sum()
+    
+    # Iterate through each column
+    for c in df:
+        
+        # Convert ids and booleans to integers
+        if ('SK_ID' in c):
+            df[c] = df[c].fillna(0).astype(np.int32)
+            
+        # Convert objects to category
+        elif (df[c].dtype == 'object') and (df[c].nunique() < df.shape[0]):
+            df[c] = df[c].astype('category')
+        
+        # Booleans mapped to integers
+        elif list(df[c].unique()) == [1, 0]:
+            df[c] = df[c].astype(bool)
+        
+        # Float64 to float32
+        elif df[c].dtype == float:
+            df[c] = df[c].astype(np.float32)
+            
+        # Int64 to int32
+        elif df[c].dtype == int:
+            df[c] = df[c].astype(np.int32)
+        
+    new_memory = df.memory_usage().sum()
+    
+    if print_info:
+        print(f'Original Memory Usage: {round(original_memory / 1e9, 2)} gb.')
+        print(f'New Memory Usage: {round(new_memory / 1e9, 2)} gb.')
+        
+    return df
