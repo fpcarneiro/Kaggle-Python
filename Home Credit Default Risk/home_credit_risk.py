@@ -7,6 +7,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.ensemble import RandomForestClassifier
 import lightgbm as lgb
+from xgboost import XGBClassifier
 
 # Suppress warnings from pandas
 import matplotlib.pyplot as plt
@@ -16,7 +17,7 @@ warnings.filterwarnings('ignore')
 
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.pipeline import Pipeline
-from sklearn.feature_selection import VarianceThreshold
+from sklearn.feature_selection import VarianceThreshold, SelectFromModel
 
 import gc
 
@@ -154,28 +155,35 @@ test_X.drop(list(duplicated.keys()), axis=1, inplace = True)
 
 pipeline = Pipeline([
                      ('scaler', MinMaxScaler(feature_range = (0, 1))),
-                     ('low_variance', VarianceThreshold(0.998 * (1 - 0.998))),
-                     #('reduce_dim', SelectFromModel(Lasso(alpha=0.0004, random_state = seed))),
+                     ('low_variance', VarianceThreshold()),
+                     ('reduce_dim', SelectFromModel(LogisticRegression(C = 0.0001))),
                      ])
 
-pipeline.fit(train_X)
+pipeline.fit(train_X, train_y)
 train_X = pipeline.transform(train_X)
 test_X = pipeline.transform(test_X)
 
 def go_cv(trainset_X, trainset_y):
-    model_gbc = GradientBoostingClassifier(n_estimators=100, learning_rate=0.05, max_depth=5, subsample = 0.8, random_state=0)
+    model_gbc = GradientBoostingClassifier(n_estimators=10, learning_rate=0.05, max_depth=5, subsample = 0.8, random_state=0)
     model_logc = LogisticRegression(C = 0.0001)
-    model_rf = RandomForestClassifier(n_estimators = 100)
-    model_lgb = lgb.LGBMClassifier(n_estimators=2000, objective = 'binary', 
+    model_rf = RandomForestClassifier(n_estimators = 10)
+    model_lgb = lgb.LGBMClassifier(n_estimators=10, objective = 'binary', 
                                    class_weight = 'balanced', learning_rate = 0.05, 
                                    reg_alpha = 0.1, reg_lambda = 0.1, 
                                    subsample = 0.8, n_jobs = -1, random_state = 50)
+    model_xgb = XGBClassifier(colsample_bytree=0.35, gamma=0.027, 
+                             learning_rate=0.03, max_depth=4, 
+                             min_child_weight=1.7817, n_estimators=10,
+                             reg_alpha=0.43, reg_lambda=0.88,
+                             subsample=0.5213, silent=1,
+                             random_state = 0)
 
     models = []
-    #models.append(("lr", model_logc))
-    #models.append(("gb", model_gbc))
+    models.append(("lr", model_logc))
+    models.append(("gb", model_gbc))
     models.append(("lgb", model_lgb))
-    #models.append(("rf", model_rf))
+    models.append(("rf", model_rf))
+    models.append(("xgb", model_xgb))
 
     seed = 2018
     results = ev.get_cross_validate(models, trainset_X, trainset_y, 
@@ -189,8 +197,8 @@ def submit(model, trainset_X, trainset_y, ids, testset_X, filename = 'submission
     my_submission.to_csv(filename, index=False)
     
     
-train_cv = go_cv(train_X, train_y)    
-submit(model_lgb, train_X, train_y, ids, test_X)
+train_cv = go_cv(train_X, train_y)
+submit(model_xgb, train_X, train_y, ids, test_X, filename = 'submission_xgb.csv')
 
 
 
@@ -247,4 +255,3 @@ for train_indices, valid_indices in k_fold.split(features):
                   early_stopping_rounds = 100, verbose = 200)
     
     best_iteration = model.best_iteration_
-    
