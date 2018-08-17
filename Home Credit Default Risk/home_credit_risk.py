@@ -194,7 +194,10 @@ test_X.drop(list(duplicated.keys()), axis=1, inplace = True)
 pipeline = Pipeline([
                      ('scaler', MinMaxScaler(feature_range = (0, 1))),
                      ('low_variance', VarianceThreshold()),
-                     #('reduce_dim', SelectFromModel(LogisticRegression(C = 0.0001))),
+                     ('reduce_dim', SelectFromModel(lgb.LGBMClassifier(n_estimators=1000, objective = 'binary', 
+                                   class_weight = 'balanced', learning_rate = 0.05, 
+                                   reg_alpha = 0.1, reg_lambda = 0.1, 
+                                   subsample = 0.8, n_jobs = -1, random_state = 50), threshold="0.5*median")),
                      ])
 
 pipeline.fit(train_X, train_y)
@@ -202,32 +205,32 @@ train_X = pipeline.transform(train_X)
 test_X = pipeline.transform(test_X)
 
 
-importances_tree_2 = fs.get_feature_importance(lgb.LGBMClassifier(n_estimators=100, objective = 'binary', 
+importances_tree = fs.get_feature_importance(lgb.LGBMClassifier(n_estimators=1000, objective = 'binary', 
                                    class_weight = 'balanced', learning_rate = 0.05, 
                                    reg_alpha = 0.1, reg_lambda = 0.1, 
                                    subsample = 0.8, n_jobs = -1, random_state = 50), train_X, train_y)
-fs.plot_features_importances(importances_tree_2, show_importance_zero = False)
+fs.plot_features_importances(importances_tree, show_importance_zero = False)
 
 def go_cv(trainset_X, trainset_y):
-    model_gbc = GradientBoostingClassifier(n_estimators=100, learning_rate=0.05, max_depth=5, subsample = 0.8, random_state=0)
+    model_gbc = GradientBoostingClassifier(n_estimators=10, learning_rate=0.05, max_depth=5, subsample = 0.8, random_state=0)
     model_logc = LogisticRegression(C = 0.0001)
-    model_rf = RandomForestClassifier(n_estimators = 100)
-    model_lgb = lgb.LGBMClassifier(n_estimators=100, objective = 'binary', 
+    model_rf = RandomForestClassifier(n_estimators = 10)
+    model_lgb = lgb.LGBMClassifier(n_estimators=1500, objective = 'binary', 
                                    class_weight = 'balanced', learning_rate = 0.05, 
                                    reg_alpha = 0.1, reg_lambda = 0.1, 
                                    subsample = 0.8, n_jobs = -1, random_state = 50)
     model_xgb = XGBClassifier(colsample_bytree=0.35, gamma=0.027, 
                              learning_rate=0.03, max_depth=4, 
-                             min_child_weight=1.7817, n_estimators=100,
+                             min_child_weight=1.7817, n_estimators=20,
                              reg_alpha=0.43, reg_lambda=0.88,
                              subsample=0.5213, silent=1,
                              random_state = 0)
 
     models = []
-    models.append(("lr", model_logc))
-    models.append(("gb", model_gbc))
+    #models.append(("lr", model_logc))
+    #models.append(("gb", model_gbc))
     models.append(("lgb", model_lgb))
-    models.append(("rf", model_rf))
+    #models.append(("rf", model_rf))
     models.append(("xgb", model_xgb))
 
     seed = 2018
@@ -243,7 +246,7 @@ def submit(model, trainset_X, trainset_y, ids, testset_X, filename = 'submission
     
     
 train_cv = go_cv(train_X, train_y)
-submit(model_lgb, train_X, train_y, ids, test_X, filename = 'submission_lgb.csv')
+submit(model_lgb, train_X, train_y, ids, test_X, filename = 'submission_lgb_1500.csv')
 
 
 
