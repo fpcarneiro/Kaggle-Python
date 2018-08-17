@@ -224,7 +224,7 @@ def agg_numeric(df, group_var, df_name):
     numeric_df[group_var] = group_ids
 
     # Group by the specified variable and calculate the statistics
-    agg = numeric_df.groupby(group_var).agg(['count', 'mean', 'max', 'min', 'sum', 'std']).reset_index()
+    agg = numeric_df.groupby(group_var).agg(['count', 'mean', 'max', 'min', 'sum', 'std', 'var']).reset_index()
 
     # Need to create new column names
     columns = [group_var]

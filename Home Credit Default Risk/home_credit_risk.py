@@ -97,12 +97,27 @@ test = pp.convert_types(test, print_info = True)
 train = pp.get_domain_knowledge_features(train)
 test = pp.get_domain_knowledge_features(test)
 
-bureau = pp.convert_types(pp.read_dataset_csv(filename = "bureau.csv"), print_info = True)
+bureau = pp.read_dataset_csv(filename = "bureau.csv")
+
+bureau_ct_table = pp.check_categorical_cols_values(bureau, col = "CREDIT_TYPE")
+s_bureau_ct = set(bureau_ct_table[bureau_ct_table.loc[:, "% of Total"] < 1].index)
+bureau.loc[bureau.CREDIT_TYPE.isin(s_bureau_ct), 'CREDIT_TYPE'] = "Other"
+
+bureau_cc_table = pp.check_categorical_cols_values(bureau, col = "CREDIT_CURRENCY")
+s_bureau_cc = set(bureau_cc_table[bureau_cc_table.loc[:, "% of Total"] < 1].index)
+bureau.loc[bureau.CREDIT_CURRENCY.isin(s_bureau_cc), 'CREDIT_CURRENCY'] = "Other"
+
+bureau_ca_table = pp.check_categorical_cols_values(bureau, col = "CREDIT_ACTIVE")
+s_bureau_ca = set(bureau_ca_table[bureau_ca_table.loc[:, "% of Total"] < 1].index)
+bureau.loc[bureau.CREDIT_ACTIVE.isin(s_bureau_ca), 'CREDIT_ACTIVE'] = "Other"
+
+bureau = pp.convert_types(bureau, print_info = True)
+
 bureau_agg = pp.get_engineered_features(bureau.drop(['SK_ID_BUREAU'], axis=1), group_var = 'SK_ID_CURR', df_name = 'bureau')
 train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
 test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
 
-del bureau_agg
+del bureau_agg, bureau_ct_table, bureau_cc_table, s_bureau_ct, s_bureau_cc, bureau_ca_table, s_bureau_ca
 gc.collect()
 
 group_vars = ['SK_ID_BUREAU', 'SK_ID_CURR']
@@ -197,7 +212,7 @@ pipeline = Pipeline([
                      ('reduce_dim', SelectFromModel(lgb.LGBMClassifier(n_estimators=1000, objective = 'binary', 
                                    class_weight = 'balanced', learning_rate = 0.05, 
                                    reg_alpha = 0.1, reg_lambda = 0.1, 
-                                   subsample = 0.8, n_jobs = -1, random_state = 50), threshold="0.5*median")),
+                                   subsample = 0.8, n_jobs = 1, random_state = 50), threshold = "0.5*median")),
                      ])
 
 pipeline.fit(train_X, train_y)
@@ -208,23 +223,23 @@ test_X = pipeline.transform(test_X)
 importances_tree = fs.get_feature_importance(lgb.LGBMClassifier(n_estimators=1000, objective = 'binary', 
                                    class_weight = 'balanced', learning_rate = 0.05, 
                                    reg_alpha = 0.1, reg_lambda = 0.1, 
-                                   subsample = 0.8, n_jobs = -1, random_state = 50), train_X, train_y)
+                                   subsample = 0.8, n_jobs = 1, random_state = 50), train_X, train_y)
 fs.plot_features_importances(importances_tree, show_importance_zero = False)
 
 def go_cv(trainset_X, trainset_y):
-    model_gbc = GradientBoostingClassifier(n_estimators=10, learning_rate=0.05, max_depth=5, subsample = 0.8, random_state=0)
-    model_logc = LogisticRegression(C = 0.0001)
-    model_rf = RandomForestClassifier(n_estimators = 10)
-    model_lgb = lgb.LGBMClassifier(n_estimators=1500, objective = 'binary', 
+    #model_gbc = GradientBoostingClassifier(n_estimators=10, learning_rate=0.05, max_depth=5, subsample = 0.8, random_state=0)
+    #model_logc = LogisticRegression(C = 0.0001)
+    #model_rf = RandomForestClassifier(n_estimators = 10, n_jobs = 1)
+    model_lgb = lgb.LGBMClassifier(n_estimators=10, objective = 'binary', 
                                    class_weight = 'balanced', learning_rate = 0.05, 
                                    reg_alpha = 0.1, reg_lambda = 0.1, 
-                                   subsample = 0.8, n_jobs = -1, random_state = 50)
+                                   subsample = 0.8, n_jobs = 1, random_state = 50)
     model_xgb = XGBClassifier(colsample_bytree=0.35, gamma=0.027, 
                              learning_rate=0.03, max_depth=4, 
-                             min_child_weight=1.7817, n_estimators=20,
+                             min_child_weight=1.7817, n_estimators=10,
                              reg_alpha=0.43, reg_lambda=0.88,
                              subsample=0.5213, silent=1,
-                             random_state = 0)
+                             random_state = 0, n_jobs = 1)
 
     models = []
     #models.append(("lr", model_logc))
@@ -246,7 +261,7 @@ def submit(model, trainset_X, trainset_y, ids, testset_X, filename = 'submission
     
     
 train_cv = go_cv(train_X, train_y)
-submit(model_lgb, train_X, train_y, ids, test_X, filename = 'submission_lgb_1500.csv')
+submit(model_lgb, train_X, train_y, ids, test_X, filename = 'submission_lgb.csv')
 
 
 
@@ -303,3 +318,49 @@ for train_indices, valid_indices in k_fold.split(features):
                   early_stopping_rounds = 100, verbose = 200)
     
     best_iteration = model.best_iteration_
+    
+    
+    
+def cat_num(df, df_name, group_var = ['SK_ID_CURR', 'CREDIT_ACTIVE'], funcs = ['sum', 'mean'], target_numvar = ['DAYS_CREDIT']):
+    
+    df_1 = df.loc[:, group_var + target_numvar].groupby(group_var).agg(funcs)
+    
+    column_names = []
+    for var in df_1.columns.levels[0]:
+        for stat in list(df_1.columns.levels[1].get_values()):
+            column_names.append('%s_%s' % (var, stat.upper()))
+    df_1.columns = column_names
+    
+    df_2 = df_1.pivot_table(columns=[group_var[1]], values= column_names, index= [group_var[0]], fill_value=0)
+    
+    column_names = []
+    for var in df_2.columns.levels[0]:
+        field_name = var[:var.rfind("_")]
+        print(field_name)
+        sufix = var[var.rfind("_")+1:]
+        for stat in df_2.columns.levels[1]:
+            print(stat.upper())
+            column_names.append('%s_%s_%s_%s' % (df_name.upper(), field_name, stat.upper(), sufix))
+        print("")
+        
+    df_2.columns = column_names
+    df_2 = df_2.reset_index()
+    
+    return (df_2)
+
+    
+
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
