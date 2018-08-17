@@ -65,7 +65,7 @@ def get_dtype_columns(dataset, dtypes = None):
         list_columns = [list(cols) for tipo, cols in types_cols.items() if tipo in dtypes]
     columns = []
     for cols in list_columns:
-        columns += cols
+        columns += [c for c in cols if 'SK_ID' not in c]
     return(columns)
 
 def get_missing_cols(dataset, dtypes = None):
@@ -351,17 +351,6 @@ def get_engineered_features_from_file(filename, group_var, df_name, drop_cols = 
     df_agg = get_engineered_features(df, group_var, df_name)
     return df_agg
 
-def features(bureau, bureau_balance):    
-    bureau_agg = get_engineered_features(bureau.drop(['SK_ID_BUREAU'], axis=1), group_var = 'SK_ID_CURR', df_name = 'bureau')    
-    bureau_balance_agg = get_engineered_features(bureau_balance, group_var = 'SK_ID_BUREAU', df_name = 'bureau_balance')
-
-    # Merge to include the SK_ID_CURR
-    bureau_by_loan = bureau[['SK_ID_BUREAU', 'SK_ID_CURR']].merge(bureau_balance_agg, on = 'SK_ID_BUREAU', how = 'left')
-    # Aggregate the stats for each client
-    bureau_balance_by_client = agg_numeric(bureau_by_loan.drop(['SK_ID_BUREAU'], axis=1), group_var = 'SK_ID_CURR', df_name = 'client')
-    
-    return bureau_agg, bureau_balance_by_client
-
 def aggregate_client(df, parent_df, group_vars, df_names):
     """Aggregate a dataframe with data at the loan level 
     at the client level
@@ -495,3 +484,27 @@ def convert_types(df, print_info = False):
         print(f'New Memory Usage: {round(new_memory / 1e9, 2)} gb.')
         
     return df
+
+def agg_categorical_numeric(df, df_name, group_var = ['SK_ID_CURR', 'CREDIT_ACTIVE'], funcs = ['sum', 'mean'], target_numvar = ['DAYS_CREDIT', 'AMT_ANNUITY']):
+    
+    df_1 = df.loc[:, group_var + target_numvar].groupby(group_var).agg(funcs)
+    
+    column_names = []
+    for var in df_1.columns.levels[0]:
+        for stat in list(df_1.columns.levels[1].get_values()):
+            column_names.append('%s_%s' % (var, stat.upper()))
+    df_1.columns = column_names
+    
+    df_2 = df_1.pivot_table(columns=[group_var[1]], values= column_names, index= [group_var[0]], fill_value=0)
+    
+    column_names = []
+    for var in df_2.columns.levels[0]:
+        field_name = var[:var.rfind("_")]
+        sufix = var[var.rfind("_")+1:]
+        for stat in df_2.columns.levels[1]:
+            column_names.append('%s_%s_%s_%s_%s' % (df_name.upper(), group_var[1], stat.upper(), field_name, sufix))
+        
+    df_2.columns = column_names
+    df_2 = df_2.reset_index()
+    
+    return (df_2)

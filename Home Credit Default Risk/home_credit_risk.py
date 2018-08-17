@@ -111,9 +111,16 @@ bureau_ca_table = pp.check_categorical_cols_values(bureau, col = "CREDIT_ACTIVE"
 s_bureau_ca = set(bureau_ca_table[bureau_ca_table.loc[:, "% of Total"] < 1].index)
 bureau.loc[bureau.CREDIT_ACTIVE.isin(s_bureau_ca), 'CREDIT_ACTIVE'] = "Other"
 
-bureau = pp.convert_types(bureau, print_info = True)
+#df, df_name, group_var = ['SK_ID_CURR', 'CREDIT_ACTIVE'], funcs = ['sum', 'mean'], target_numvar = ['DAYS_CREDIT', 'AMT_ANNUITY']
+numeric_cols = pp.get_dtype_columns(bureau, dtypes = [np.dtype(np.int64), np.dtype(np.float64)])
+bureau_cat_num_agg = pp.agg_categorical_numeric(bureau, df_name = "bureau", 
+                                                funcs = ['sum', 'mean', 'std'], group_var = ['SK_ID_CURR', 'CREDIT_ACTIVE'], 
+                                                target_numvar = numeric_cols)
 
-bureau_agg = pp.get_engineered_features(bureau.drop(['SK_ID_BUREAU'], axis=1), group_var = 'SK_ID_CURR', df_name = 'bureau')
+bureau = pp.convert_types(bureau, print_info = True)
+bureau_cat_num_agg = pp.convert_types(bureau_cat_num_agg, print_info = True)
+
+bureau_agg = pp.get_engineered_features(bureau.drop(['SK_ID_BUREAU'], axis=1), group_var = 'SK_ID_CURR', df_name = 'BUREAU')
 train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
 test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
 
@@ -318,35 +325,6 @@ for train_indices, valid_indices in k_fold.split(features):
                   early_stopping_rounds = 100, verbose = 200)
     
     best_iteration = model.best_iteration_
-    
-    
-    
-def cat_num(df, df_name, group_var = ['SK_ID_CURR', 'CREDIT_ACTIVE'], funcs = ['sum', 'mean'], target_numvar = ['DAYS_CREDIT']):
-    
-    df_1 = df.loc[:, group_var + target_numvar].groupby(group_var).agg(funcs)
-    
-    column_names = []
-    for var in df_1.columns.levels[0]:
-        for stat in list(df_1.columns.levels[1].get_values()):
-            column_names.append('%s_%s' % (var, stat.upper()))
-    df_1.columns = column_names
-    
-    df_2 = df_1.pivot_table(columns=[group_var[1]], values= column_names, index= [group_var[0]], fill_value=0)
-    
-    column_names = []
-    for var in df_2.columns.levels[0]:
-        field_name = var[:var.rfind("_")]
-        print(field_name)
-        sufix = var[var.rfind("_")+1:]
-        for stat in df_2.columns.levels[1]:
-            print(stat.upper())
-            column_names.append('%s_%s_%s_%s' % (df_name.upper(), field_name, stat.upper(), sufix))
-        print("")
-        
-    df_2.columns = column_names
-    df_2 = df_2.reset_index()
-    
-    return (df_2)
 
     
 
