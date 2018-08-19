@@ -181,7 +181,7 @@ def get_domain_knowledge_features(X):
     X_domain['DAYS_EMPLOYED_PERCENT'] = X_domain['DAYS_EMPLOYED'] / X_domain['DAYS_BIRTH']
     X_domain['INCOME_CREDIT_PERC'] = X_domain['AMT_INCOME_TOTAL'] / X_domain['AMT_CREDIT']
     X_domain['INCOME_PER_PERSON'] = X_domain['AMT_INCOME_TOTAL'] / X_domain['CNT_FAM_MEMBERS']
-    #X_domain['INCOME_PER_CHILD'] = X_domain['AMT_INCOME_TOTAL'] / X_domain['CNT_CHILDREN']
+    X_domain['CHILDREN_RATIO'] = X_domain['CNT_CHILDREN'] / X_domain['CNT_FAM_MEMBERS']
     X_domain["HOW_MANY_DOCUMENTS"] = X_domain.loc[:, flag_doc_cols].sum(axis=1)
     X_domain["EXT_SOURCE_SUM"] = X_domain.loc[:, ['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']].sum(axis=1)
     X_domain["EXT_SOURCE_AVG"] = X_domain.loc[:, ['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']].mean(axis=1)

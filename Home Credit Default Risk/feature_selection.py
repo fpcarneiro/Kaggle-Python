@@ -38,7 +38,8 @@ def plot_features_importances(df_importances, show_importance_zero = False):
 ### Removing features with low variance - VarianceThreshold
 def list_features_low_variance(X, y, threshold = .98):
     variance_threshold = (threshold * (1 - threshold))
-    pipe_variance = Pipeline([('scaler', RobustScaler()),
+    pipe_variance = Pipeline([
+            ('scaler', RobustScaler()),
                               ('reduce_dim', VarianceThreshold(variance_threshold))])
     pipe_variance.fit(X, y)
     features_variance = list(X.loc[:, pipe_variance.named_steps['reduce_dim'].get_support()].columns)

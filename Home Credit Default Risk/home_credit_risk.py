@@ -7,7 +7,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.ensemble import RandomForestClassifier
 import lightgbm as lgb
-from xgboost import XGBClassifier
+import xgboost as xgb
 
 # Suppress warnings from pandas
 import matplotlib.pyplot as plt
@@ -124,7 +124,11 @@ bureau_agg = pp.get_engineered_features(bureau.drop(['SK_ID_BUREAU'], axis=1), g
 train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
 test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
 
+train = train.merge(bureau_cat_num_agg, on = 'SK_ID_CURR', how = 'left')
+test = test.merge(bureau_cat_num_agg, on = 'SK_ID_CURR', how = 'left')
+
 del bureau_agg, bureau_ct_table, bureau_cc_table, s_bureau_ct, s_bureau_cc, bureau_ca_table, s_bureau_ca
+del bureau_cat_num_agg, numeric_cols
 gc.collect()
 
 group_vars = ['SK_ID_BUREAU', 'SK_ID_CURR']
@@ -176,29 +180,6 @@ gc.enable()
 del installments_payments, installments_payments_agg, group_vars
 gc.collect()
 
-
-original_features = list(train.columns)
-print('Original Number of Features: ', len(original_features))
-
-# Merge with the value counts of bureau
-
-#train = train.merge(bureau_agg, left_on = 'SK_ID_CURR', right_index = True, how = 'left')
-
-# Merge with the monthly information grouped by client
-train = train.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
-
-new_features = list(train.columns)
-print('Number of features using previous loans from other institutions data: ', len(new_features))
-
-# Merge with the value counts of bureau
-
-#test = test.merge(bureau_counts, left_on = 'SK_ID_CURR', right_index = True, how = 'left')
-
-# Merge with the value counts of bureau balance
-test = test.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
-
-print('Shape of Testing Data: ', test.shape)
-
 train.fillna(0, inplace= True)
 test.fillna(0, inplace= True)
 
@@ -209,25 +190,85 @@ train_X = train.drop(['SK_ID_CURR', 'TARGET'], axis=1)
 ids = test['SK_ID_CURR']
 test_X = test.drop(['SK_ID_CURR'], axis=1)
 
-duplicated = pp.duplicate_columns(train_X)
+duplicated = pp.duplicate_columns(train_X, verbose = True, progress = False)
 train_X.drop(list(duplicated.keys()), axis=1, inplace = True)
 test_X.drop(list(duplicated.keys()), axis=1, inplace = True)
 
+features_variance = fs.list_features_low_variance(train_X, train_y, .98)
+train_X_reduced = train_X[features_variance]
+test_X_reduced = test_X[features_variance]
+
 pipeline = Pipeline([
                      ('scaler', MinMaxScaler(feature_range = (0, 1))),
-                     ('low_variance', VarianceThreshold()),
-                     ('reduce_dim', SelectFromModel(lgb.LGBMClassifier(n_estimators=1000, objective = 'binary', 
-                                   class_weight = 'balanced', learning_rate = 0.05, 
-                                   reg_alpha = 0.1, reg_lambda = 0.1, 
-                                   subsample = 0.8, n_jobs = 1, random_state = 50), threshold = "0.5*median")),
+                     #('low_variance', VarianceThreshold(0.98 * (1 - 0.98))),
+                     #('reduce_dim', SelectFromModel(lgb.LGBMClassifier(n_estimators=1500, objective = 'binary', 
+                     #              class_weight = 'balanced', learning_rate = 0.05, 
+                     #              reg_alpha = 0.1, reg_lambda = 0.1, 
+                     #              subsample = 0.8, n_jobs = 1, random_state = 50), threshold = "median")),
                      ])
 
-pipeline.fit(train_X, train_y)
-train_X = pipeline.transform(train_X)
-test_X = pipeline.transform(test_X)
+pipeline.fit(train_X_reduced, test_X_reduced)
+train_X_reduced = pipeline.transform(train_X_reduced)
+test_X_reduced = pipeline.transform(test_X_reduced)
+
+###############################################################################
+#XGBOOST
+###############################################################################
+
+xgtrain = xgb.DMatrix(data=train_X_reduced, label=train_y, feature_names = features_variance)
+xgtest = xgb.DMatrix(data=test_X_reduced, feature_names = features_variance)
+
+params = dict()
+params["booster"] = "gbtree"
+params["objective"] = "binary:logistic"
+params["colsample_bytree"] = 0.5
+params["subsample"] = 0.5
+params["max_depth"] = 3
+params['reg_alpha'] = 0.55
+params['reg_lambda'] = 0.85
+params["learning_rate"] = 0.09
+params["min_child_weight"] = 2
+
+cv_results = xgb.cv(dtrain=xgtrain, params=params, nfold=3,
+                    num_boost_round=1500, early_stopping_rounds=50, metrics="auc", as_pandas=True, seed=2018, verbose_eval = 10)
+cv_results.head()
+print((cv_results["test-auc-mean"]).tail(1))
+
+xgbooster = xgb.train(params = params, dtrain = xgtrain, num_boost_round = 400, maximize = True)
+
+import matplotlib.pyplot as plt
+
+xgb.plot_tree(xgbooster,num_trees=0)
+plt.rcParams['figure.figsize'] = [1000, 1000]
+plt.show()
+
+xgb.plot_importance(xgbooster)
+plt.rcParams['figure.figsize'] = [50, 50]
+plt.show()
 
 
-importances_tree = fs.get_feature_importance(lgb.LGBMClassifier(n_estimators=1000, objective = 'binary', 
+pred = xgbooster.predict(xgtest)
+my_submission = pd.DataFrame({'SK_ID_CURR': ids, 'TARGET': pred})
+my_submission.to_csv("xgb_dmatrix.csv", index=False)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+importances_tree = fs.get_feature_importance(lgb.LGBMClassifier(n_estimators=1500, objective = 'binary', 
                                    class_weight = 'balanced', learning_rate = 0.05, 
                                    reg_alpha = 0.1, reg_lambda = 0.1, 
                                    subsample = 0.8, n_jobs = 1, random_state = 50), train_X, train_y)
@@ -237,13 +278,13 @@ def go_cv(trainset_X, trainset_y):
     #model_gbc = GradientBoostingClassifier(n_estimators=10, learning_rate=0.05, max_depth=5, subsample = 0.8, random_state=0)
     #model_logc = LogisticRegression(C = 0.0001)
     #model_rf = RandomForestClassifier(n_estimators = 10, n_jobs = 1)
-    model_lgb = lgb.LGBMClassifier(n_estimators=10, objective = 'binary', 
+    model_lgb = lgb.LGBMClassifier(n_estimators=1500, objective = 'binary', 
                                    class_weight = 'balanced', learning_rate = 0.05, 
                                    reg_alpha = 0.1, reg_lambda = 0.1, 
                                    subsample = 0.8, n_jobs = 1, random_state = 50)
-    model_xgb = XGBClassifier(colsample_bytree=0.35, gamma=0.027, 
+    model_xgb = xgb.XGBClassifier(colsample_bytree=0.35, gamma=0.027, 
                              learning_rate=0.03, max_depth=4, 
-                             min_child_weight=1.7817, n_estimators=10,
+                             min_child_weight=1.7817, n_estimators=1500,
                              reg_alpha=0.43, reg_lambda=0.88,
                              subsample=0.5213, silent=1,
                              random_state = 0, n_jobs = 1)
@@ -260,20 +301,42 @@ def go_cv(trainset_X, trainset_y):
                                        folds = 3, repetitions = 1, seed = seed, train_score = False)
     return results
 
-def submit(model, trainset_X, trainset_y, ids, testset_X, filename = 'submission.csv'):
-    model.fit(trainset_X, trainset_y)
+def submit(model, ids, testset_X, filename = 'submission.csv'):
     predicted = model.predict_proba(testset_X)[:, 1]
     my_submission = pd.DataFrame({'SK_ID_CURR': ids, 'TARGET': predicted})
     my_submission.to_csv(filename, index=False)
     
     
 train_cv = go_cv(train_X, train_y)
-submit(model_lgb, train_X, train_y, ids, test_X, filename = 'submission_lgb.csv')
+
+model_xgb.fit(xgtrain)
+
+submit(model_xgb, ids, test_X, filename = 'submission_xgb.csv')
 
 
 
+#dtrain = xgb.DMatrix(train[featureNames].values, label=train['target'].values)
 
 
+params = {
+         'gamma' : 0.027, 
+         'learning_rate' : 0.03,
+         'max_depth' : 4,
+         'min_child_weight' : 1.7817,
+         'n_estimators' : 1500,
+         'reg_alpha' : 0.43,
+         'reg_lambda' : 0.88,
+         'subsample' : 0.5213,
+         'silent' : 1,
+         'n_jobs' : 1,
+         'objective':'binary:logistic', 
+         'eval_metric': 'auc'}
+
+clf = xgb.train(params, xgtrain, 2000)
+
+pred = clf.predict(xgtest)
+my_submission = pd.DataFrame({'SK_ID_CURR': ids, 'TARGET': pred})
+my_submission.to_csv("xgb_dmatrix.csv", index=False)
 
 
 
