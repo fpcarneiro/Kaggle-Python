@@ -215,26 +215,26 @@ test_X_reduced = pipeline.transform(test_X_reduced)
 #XGBOOST
 ###############################################################################
 
-xgtrain = xgb.DMatrix(data=train_X_reduced, label=train_y, feature_names = features_variance)
-xgtest = xgb.DMatrix(data=test_X_reduced, feature_names = features_variance)
+xgb_train = xgb.DMatrix(data=train_X_reduced, label=train_y, feature_names = features_variance)
+xg_test = xgb.DMatrix(data=test_X_reduced, feature_names = features_variance)
 
-params = dict()
-params["booster"] = "gbtree"
-params["objective"] = "binary:logistic"
-params["colsample_bytree"] = 0.5
-params["subsample"] = 0.5
-params["max_depth"] = 3
-params['reg_alpha'] = 0.55
-params['reg_lambda'] = 0.85
-params["learning_rate"] = 0.09
-params["min_child_weight"] = 2
+xgb_params = dict()
+xgb_params["booster"] = "gbtree"
+xgb_params["objective"] = "binary:logistic"
+xgb_params["colsample_bytree"] = 0.5
+xgb_params["subsample"] = 0.8
+xgb_params["max_depth"] = 3
+xgb_params['reg_alpha'] = 0.55
+xgb_params['reg_lambda'] = 0.85
+xgb_params["learning_rate"] = 0.09
+xgb_params["min_child_weight"] = 2
 
-cv_results = xgb.cv(dtrain=xgtrain, params=params, nfold=3,
+xgb_results = xgb.cv(dtrain=xgb_train, params=xgb_params, nfold=3,
                     num_boost_round=1500, early_stopping_rounds=50, metrics="auc", as_pandas=True, seed=2018, verbose_eval = 10)
-cv_results.head()
-print((cv_results["test-auc-mean"]).tail(1))
+xgb_results.head()
+print((xgb_results["test-auc-mean"]).tail(1))
 
-xgbooster = xgb.train(params = params, dtrain = xgtrain, num_boost_round = 400, maximize = True)
+xgbooster = xgb.train(params = xgb_params, dtrain = xgb_train, num_boost_round = 850, maximize = True)
 
 import matplotlib.pyplot as plt
 
@@ -246,15 +246,33 @@ xgb.plot_importance(xgbooster)
 plt.rcParams['figure.figsize'] = [50, 50]
 plt.show()
 
-
-pred = xgbooster.predict(xgtest)
+pred = xgbooster.predict(xg_test)
 my_submission = pd.DataFrame({'SK_ID_CURR': ids, 'TARGET': pred})
 my_submission.to_csv("xgb_dmatrix.csv", index=False)
 
+# LIGHT GBM
+lgb_train = lgb.Dataset(train_X_reduced, label=train_y, feature_name = features_variance)
+#lgb_test = lgb.Dataset(test_X_reduced)
 
+lgb_params = {}
+lgb_params['boosting_type'] = 'gbdt'
+lgb_params['objective'] = 'binary'
+lgb_params['learning_rate'] = 0.05
+lgb_params['reg_alpha'] = 0.1
+lgb_params['reg_lambda'] = 0.1
+lgb_params['subsample'] = 0.8
+lgb_params["colsample_bytree"] = 0.5
+lgb_params['metric'] = 'auc'
 
+# Params to test later: stratified, shuffle, 
+lgb_results = lgb.cv(train_set = lgb_train, params = lgb_params, num_boost_round = 1500, nfold = 3,
+       metrics='auc', early_stopping_rounds = 50, verbose_eval = 10, seed=2018)
 
+lgb_booster = lgb.train(params = lgb_params, train_set = lgb_train, num_boost_round = 590)
 
+lgb_predict = lgb_booster.predict(test_X_reduced)
+my_submission = pd.DataFrame({'SK_ID_CURR': ids, 'TARGET': lgb_predict})
+my_submission.to_csv("lgb_dataset.csv", index=False)
 
 
 
