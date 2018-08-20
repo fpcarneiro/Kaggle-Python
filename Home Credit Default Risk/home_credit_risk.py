@@ -97,7 +97,20 @@ test = pp.convert_types(test, print_info = True)
 train = pp.get_domain_knowledge_features(train)
 test = pp.get_domain_knowledge_features(test)
 
+target_column = "TARGET"
+application_id_columns = [c for c in test.columns if c.startswith("SK_ID_")]
+application_columns = [c for c in test.columns if c not in application_id_columns]
+
+
+
+
+
+
+
 bureau = pp.read_dataset_csv(filename = "bureau.csv")
+print(pp.check_missing(bureau[pp.get_numerical_missing_cols(bureau)]))
+bureau = pp.handle_missing_median(bureau, pp.get_numerical_missing_cols(bureau), group_by_cols = ["SK_ID_CURR"])
+print(pp.check_missing(bureau[pp.get_numerical_missing_cols(bureau)]))
 
 bureau_ct_table = pp.check_categorical_cols_values(bureau, col = "CREDIT_TYPE")
 s_bureau_ct = set(bureau_ct_table[bureau_ct_table.loc[:, "% of Total"] < 1].index)
@@ -110,6 +123,9 @@ bureau.loc[bureau.CREDIT_CURRENCY.isin(s_bureau_cc), 'CREDIT_CURRENCY'] = "Other
 bureau_ca_table = pp.check_categorical_cols_values(bureau, col = "CREDIT_ACTIVE")
 s_bureau_ca = set(bureau_ca_table[bureau_ca_table.loc[:, "% of Total"] < 1].index)
 bureau.loc[bureau.CREDIT_ACTIVE.isin(s_bureau_ca), 'CREDIT_ACTIVE'] = "Other"
+
+bureau = pp.handle_missing_median(bureau, pp.get_numerical_missing_cols(bureau), group_by_cols = ["CREDIT_TYPE"])
+print(pp.check_missing(bureau[pp.get_numerical_missing_cols(bureau)]))
 
 #df, df_name, group_var = ['SK_ID_CURR', 'CREDIT_ACTIVE'], funcs = ['sum', 'mean'], target_numvar = ['DAYS_CREDIT', 'AMT_ANNUITY']
 numeric_cols = pp.get_dtype_columns(bureau, dtypes = [np.dtype(np.int64), np.dtype(np.float64)])
@@ -127,16 +143,30 @@ test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
 train = train.merge(bureau_cat_num_agg, on = 'SK_ID_CURR', how = 'left')
 test = test.merge(bureau_cat_num_agg, on = 'SK_ID_CURR', how = 'left')
 
+bureau_agg_id_columns = set([c for c in bureau_agg.columns if c.startswith("SK_ID_")] + [c for c in bureau_cat_num_agg.columns if c.startswith("SK_ID_")])
+bureau_agg_columns = set([c for c in bureau_agg.columns if c not in bureau_agg_id_columns] + [c for c in bureau_cat_num_agg.columns if c not in bureau_agg_id_columns])
+
 del bureau_agg, bureau_ct_table, bureau_cc_table, s_bureau_ct, s_bureau_cc, bureau_ca_table, s_bureau_ca
 del bureau_cat_num_agg, numeric_cols
 gc.collect()
 
 group_vars = ['SK_ID_BUREAU', 'SK_ID_CURR']
-bureau_balance = pp.convert_types(pp.read_dataset_csv(filename = "bureau_balance.csv"), print_info = True)
-bureau_balance_agg = pp.aggregate_client(bureau_balance, parent_df = bureau[group_vars], group_vars = group_vars, 
-                                         df_names = ['bureau_balance', 'client'])
-train = train.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
-test = test.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
+bureau_balance = pp.read_dataset_csv(filename = "bureau_balance.csv")
+bureau_balance = pp.convert_types(bureau_balance, print_info = True)
+#bureau_balance_agg = pp.aggregate_client(bureau_balance, parent_df = bureau[group_vars], group_vars = group_vars, 
+#                                         df_names = ['bureau_balance', 'client'])
+
+bureau_balance_agg = pp.get_engineered_features(bureau_balance, group_var = 'SK_ID_BUREAU', df_name = "bureau_balance", num_agg_funcs = ['count', 'min', 'max'], cat_agg_funcs = ['sum'], cols_alias = ['count'])
+cols_status = [c for c in bureau_balance_agg.columns if c.endswith("_count") and c.find("_STATUS_") != -1 and c not in ["bureau_balance_STATUS_X_count", "bureau_balance_STATUS_C_count", "bureau_balance_STATUS_0_count"]]
+# DPD ==Days Past Due
+bureau_balance_agg["bureau_balance_DPD_count"] = bureau_balance_agg.loc[:, cols_status].sum(axis=1)
+#bureau_balance_agg["bureau_balance_DPD_PERCENT"] = bureau_balance_agg["DPD_COUNT"]/bureau_balance_agg["bureau_balance_MONTHS_BALANCE_count"]
+bureau_balance_agg = bureau_balance_agg.merge(bureau[[group_vars[0], group_vars[1]]], on = group_vars[0], how = 'left')
+bureau_balance_agg = bureau_balance_agg.drop([group_vars[0]], axis=1)
+bureau_balance_agg_by_client = pp.agg_numeric(bureau_balance_agg, group_var = group_vars[1], df_name = 'client')
+
+train = train.merge(bureau_balance_agg_by_client, on = 'SK_ID_CURR', how = 'left')
+test = test.merge(bureau_balance_agg_by_client, on = 'SK_ID_CURR', how = 'left')
 
 gc.enable()
 del bureau, bureau_balance, bureau_balance_agg, group_vars

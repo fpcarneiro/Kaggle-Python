@@ -192,7 +192,7 @@ def get_domain_knowledge_features(X):
     
     return (X_domain.drop(cols_flag_del, axis = 1))
 
-def agg_numeric(df, group_var, df_name):
+def agg_numeric(df, group_var, df_name, agg_funcs = ['count', 'mean', 'max', 'min', 'sum', 'std', 'var']):
     """Aggregates the numeric values in a dataframe. This can
     be used to create features for each instance of the grouping variable.
     
@@ -224,7 +224,7 @@ def agg_numeric(df, group_var, df_name):
     numeric_df[group_var] = group_ids
 
     # Group by the specified variable and calculate the statistics
-    agg = numeric_df.groupby(group_var).agg(['count', 'mean', 'max', 'min', 'sum', 'std', 'var']).reset_index()
+    agg = numeric_df.groupby(group_var).agg(agg_funcs).reset_index()
 
     # Need to create new column names
     columns = [group_var]
@@ -241,7 +241,7 @@ def agg_numeric(df, group_var, df_name):
     agg.columns = columns
     return agg
 
-def count_categorical(df, group_var, df_name):
+def count_categorical(df, group_var, df_name, agg_funcs = ['sum', 'mean'], cols_alias = ['count', 'count_norm']):
     """Computes counts and normalized counts for each observation
     of `group_var` of each unique category in every categorical variable
     
@@ -272,14 +272,14 @@ def count_categorical(df, group_var, df_name):
     categorical[group_var] = df[group_var]
 
     # Groupby the group var and calculate the sum and mean
-    categorical = categorical.groupby(group_var).agg(['sum', 'mean'])
+    categorical = categorical.groupby(group_var).agg(agg_funcs)
     
     column_names = []
     
     # Iterate through the columns in level 0
     for var in categorical.columns.levels[0]:
         # Iterate through the stats in level 1
-        for stat in ['count', 'count_norm']:
+        for stat in cols_alias:
             # Make a new column name
             column_names.append('%s_%s_%s' % (df_name, var, stat))
     
@@ -335,10 +335,10 @@ def kde_target(var_name, df):
     print('Median value for loan that was not repaid = %0.4f' % avg_not_repaid)
     print('Median value for loan that was repaid =     %0.4f' % avg_repaid)
 
-def get_engineered_features(df, group_var, df_name):
-    numerical_agg = agg_numeric(df, group_var = group_var, df_name = df_name)
+def get_engineered_features(df, group_var, df_name, num_agg_funcs = ['count', 'mean', 'max', 'min', 'sum', 'std', 'var'], cat_agg_funcs = ['sum', 'mean'], cols_alias = ['count', 'count_norm']):
+    numerical_agg = agg_numeric(df, group_var = group_var, df_name = df_name, agg_funcs = num_agg_funcs)
     if (any(df.dtypes == 'object') or any(df.dtypes == 'category')):
-        categorical_agg = count_categorical(df, group_var = group_var, df_name = df_name).reset_index()
+        categorical_agg = count_categorical(df, group_var = group_var, df_name = df_name, agg_funcs = cat_agg_funcs, cols_alias = cols_alias).reset_index()
         return numerical_agg.merge(categorical_agg, on = group_var, how = 'inner')
     else:
         return(numerical_agg)
