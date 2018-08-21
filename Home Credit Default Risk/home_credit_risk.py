@@ -143,8 +143,8 @@ test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
 train = train.merge(bureau_cat_num_agg, on = 'SK_ID_CURR', how = 'left')
 test = test.merge(bureau_cat_num_agg, on = 'SK_ID_CURR', how = 'left')
 
-bureau_agg_id_columns = set([c for c in bureau_agg.columns if c.startswith("SK_ID_")] + [c for c in bureau_cat_num_agg.columns if c.startswith("SK_ID_")])
-bureau_agg_columns = set([c for c in bureau_agg.columns if c not in bureau_agg_id_columns] + [c for c in bureau_cat_num_agg.columns if c not in bureau_agg_id_columns])
+bureau_agg_id_columns = list(set([c for c in bureau_agg.columns if c.startswith("SK_ID_")] + [c for c in bureau_cat_num_agg.columns if c.startswith("SK_ID_")]))
+bureau_agg_columns = list(set([c for c in bureau_agg.columns if c not in bureau_agg_id_columns] + [c for c in bureau_cat_num_agg.columns if c not in bureau_agg_id_columns]))
 
 del bureau_agg, bureau_ct_table, bureau_cc_table, s_bureau_ct, s_bureau_cc, bureau_ca_table, s_bureau_ca
 del bureau_cat_num_agg, numeric_cols
@@ -168,8 +168,12 @@ bureau_balance_agg_by_client = pp.agg_numeric(bureau_balance_agg, group_var = gr
 train = train.merge(bureau_balance_agg_by_client, on = 'SK_ID_CURR', how = 'left')
 test = test.merge(bureau_balance_agg_by_client, on = 'SK_ID_CURR', how = 'left')
 
+bureau_balance_agg_id_columns = [c for c in bureau_balance_agg_by_client.columns if c.startswith("SK_ID_")]
+bureau_balance_agg_columns = [c for c in bureau_balance_agg_by_client.columns if c not in bureau_balance_agg_id_columns]
+
 gc.enable()
 del bureau, bureau_balance, bureau_balance_agg, group_vars
+del cols_status, bureau_balance_agg_by_client
 gc.collect()
 
 previous_application = pp.convert_types(pp.read_dataset_csv(filename = "previous_application.csv"), print_info = True)
@@ -231,15 +235,17 @@ test_X_reduced = test_X[features_variance]
 pipeline = Pipeline([
                      ('scaler', MinMaxScaler(feature_range = (0, 1))),
                      #('low_variance', VarianceThreshold(0.98 * (1 - 0.98))),
-                     #('reduce_dim', SelectFromModel(lgb.LGBMClassifier(n_estimators=1500, objective = 'binary', 
-                     #              class_weight = 'balanced', learning_rate = 0.05, 
-                     #              reg_alpha = 0.1, reg_lambda = 0.1, 
-                     #              subsample = 0.8, n_jobs = 1, random_state = 50), threshold = "median")),
+                     ('reduce_dim', SelectFromModel(lgb.LGBMClassifier(boosting_type='gbdt', n_estimators=1500, objective = 'binary', 
+                                   class_weight = 'balanced', learning_rate = 0.05, 
+                                   reg_alpha = 0.1, reg_lambda = 0.1, 
+                                   subsample = 0.8, colsample_bytree = 0.5))),
                      ])
 
-pipeline.fit(train_X_reduced, test_X_reduced)
+pipeline.fit(train_X_reduced, train_y)
 train_X_reduced = pipeline.transform(train_X_reduced)
 test_X_reduced = pipeline.transform(test_X_reduced)
+
+features_select_from_model = list(train_X_reduced.loc[:, pipeline.named_steps['reduce_dim'].get_support()].columns)
 
 ###############################################################################
 #XGBOOST
@@ -281,7 +287,7 @@ my_submission = pd.DataFrame({'SK_ID_CURR': ids, 'TARGET': pred})
 my_submission.to_csv("xgb_dmatrix.csv", index=False)
 
 # LIGHT GBM
-lgb_train = lgb.Dataset(train_X_reduced, label=train_y, feature_name = features_variance)
+lgb_train = lgb.Dataset(train_X_reduced, label=train_y, feature_name = features_select_from_model)
 #lgb_test = lgb.Dataset(test_X_reduced)
 
 lgb_params = {}
@@ -436,20 +442,3 @@ for train_indices, valid_indices in k_fold.split(features):
                   early_stopping_rounds = 100, verbose = 200)
     
     best_iteration = model.best_iteration_
-
-    
-
-
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
