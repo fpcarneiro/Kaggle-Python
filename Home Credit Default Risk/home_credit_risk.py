@@ -161,9 +161,14 @@ cols_status = [c for c in bureau_balance_agg.columns if c.endswith("_count") and
 # DPD ==Days Past Due
 bureau_balance_agg["bureau_balance_DPD_count"] = bureau_balance_agg.loc[:, cols_status].sum(axis=1)
 #bureau_balance_agg["bureau_balance_DPD_PERCENT"] = bureau_balance_agg["DPD_COUNT"]/bureau_balance_agg["bureau_balance_MONTHS_BALANCE_count"]
-bureau_balance_agg = bureau_balance_agg.merge(bureau[[group_vars[0], group_vars[1]]], on = group_vars[0], how = 'left')
+#bureau_balance_agg[bureau_balance_agg.SK_ID_BUREAU.isin(bureau.SK_ID_BUREAU) == False]
+bureau_balance_agg = bureau_balance_agg.merge(bureau[[group_vars[0], group_vars[1]]], on = group_vars[0], how = 'inner')
 bureau_balance_agg = bureau_balance_agg.drop([group_vars[0]], axis=1)
 bureau_balance_agg_by_client = pp.agg_numeric(bureau_balance_agg, group_var = group_vars[1], df_name = 'client')
+
+cols_status_percent = [c for c in bureau_balance_agg_by_client.columns if c.endswith("_count_sum") and c.find("_STATUS_") != -1] + ["client_bureau_balance_DPD_count_sum"]
+for c in cols_status_percent:
+    bureau_balance_agg_by_client[c + "_PERCENT"] = bureau_balance_agg_by_client[c]/bureau_balance_agg_by_client["client_bureau_balance_MONTHS_BALANCE_count_sum"]
 
 train = train.merge(bureau_balance_agg_by_client, on = 'SK_ID_CURR', how = 'left')
 test = test.merge(bureau_balance_agg_by_client, on = 'SK_ID_CURR', how = 'left')
@@ -174,6 +179,7 @@ bureau_balance_agg_columns = [c for c in bureau_balance_agg_by_client.columns if
 gc.enable()
 del bureau, bureau_balance, bureau_balance_agg, group_vars
 del cols_status, bureau_balance_agg_by_client
+del cols_status_percent
 gc.collect()
 
 previous_application = pp.convert_types(pp.read_dataset_csv(filename = "previous_application.csv"), print_info = True)
@@ -214,15 +220,15 @@ gc.enable()
 del installments_payments, installments_payments_agg, group_vars
 gc.collect()
 
-train.fillna(0, inplace= True)
-test.fillna(0, inplace= True)
+train_X = train.fillna(0)
+test_X = test.fillna(0)
 
 # PREPARING TO TRAIN
-train_y = train['TARGET']
-train_X = train.drop(['SK_ID_CURR', 'TARGET'], axis=1)
+train_y = train_X['TARGET']
+train_X = train_X.drop(['SK_ID_CURR', 'TARGET'], axis=1)
 
-ids = test['SK_ID_CURR']
-test_X = test.drop(['SK_ID_CURR'], axis=1)
+ids = test_X['SK_ID_CURR']
+test_X = test_X.drop(['SK_ID_CURR'], axis=1)
 
 duplicated = pp.duplicate_columns(train_X, verbose = True, progress = False)
 train_X.drop(list(duplicated.keys()), axis=1, inplace = True)
@@ -242,10 +248,11 @@ pipeline = Pipeline([
                      ])
 
 pipeline.fit(train_X_reduced, train_y)
-train_X_reduced = pipeline.transform(train_X_reduced)
-test_X_reduced = pipeline.transform(test_X_reduced)
 
 features_select_from_model = list(train_X_reduced.loc[:, pipeline.named_steps['reduce_dim'].get_support()].columns)
+
+train_X_reduced = pipeline.transform(train_X_reduced)
+test_X_reduced = pipeline.transform(test_X_reduced)
 
 ###############################################################################
 #XGBOOST
@@ -267,20 +274,20 @@ xgb_params["min_child_weight"] = 2
 
 xgb_results = xgb.cv(dtrain=xgb_train, params=xgb_params, nfold=3,
                     num_boost_round=1500, early_stopping_rounds=50, metrics="auc", as_pandas=True, seed=2018, verbose_eval = 10)
-xgb_results.head()
-print((xgb_results["test-auc-mean"]).tail(1))
+#xgb_results.head()
+#print((xgb_results["test-auc-mean"]).tail(1))
 
 xgbooster = xgb.train(params = xgb_params, dtrain = xgb_train, num_boost_round = 850, maximize = True)
 
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
-xgb.plot_tree(xgbooster,num_trees=0)
-plt.rcParams['figure.figsize'] = [1000, 1000]
-plt.show()
+#xgb.plot_tree(xgbooster,num_trees=0)
+#plt.rcParams['figure.figsize'] = [1000, 1000]
+#plt.show()
 
-xgb.plot_importance(xgbooster)
-plt.rcParams['figure.figsize'] = [50, 50]
-plt.show()
+#xgb.plot_importance(xgbooster)
+#plt.rcParams['figure.figsize'] = [50, 50]
+#plt.show()
 
 pred = xgbooster.predict(xg_test)
 my_submission = pd.DataFrame({'SK_ID_CURR': ids, 'TARGET': pred})
