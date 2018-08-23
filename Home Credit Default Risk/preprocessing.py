@@ -40,9 +40,9 @@ def check_flag_doc_cols(dataset):
     missing_table = mis_val_table.drop(mis_val_table[mis_val_table.iloc[:, 1] == 0].index).sort_values('% of Total', ascending=False).round(2)
     return(missing_table)
     
-def check_categorical_cols_values(dataset, col = "ORGANIZATION_TYPE"):
-    all_data_absolute = dataset.loc[:, col].value_counts().rename("Count")
-    all_data_percent = ((dataset.loc[:, col].value_counts() / len(dataset)) * 100).rename("% of Total")
+def check_categorical_cols_values(dataset, dropna = True, col = "ORGANIZATION_TYPE"):
+    all_data_absolute = dataset.loc[:, col].value_counts(dropna = dropna).rename("Count")
+    all_data_percent = ((dataset.loc[:, col].value_counts(dropna = dropna) / len(dataset)) * 100).rename("% of Total")
     mis_val_table = pd.concat([all_data_absolute, all_data_percent], axis=1)
     #mis_val_table.rename(columns = {0 : 'Count', 1 : '% of Total'}, inplace = True)
     missing_table = mis_val_table.drop(mis_val_table[mis_val_table.iloc[:, 1] == 0].index).sort_values('% of Total', ascending=False).round(2)
