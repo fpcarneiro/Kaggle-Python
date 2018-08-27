@@ -23,12 +23,15 @@ import gc
 import time
 from contextlib import contextmanager
 from lightgbm import LGBMClassifier
+from xgboost import XGBClassifier
 from sklearn.metrics import roc_auc_score, roc_curve
 from sklearn.model_selection import KFold, StratifiedKFold
 import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
+
+import preprocessing as pp
 
 @contextmanager
 def timer(title):
@@ -54,6 +57,17 @@ def application_train_test(num_rows = None, nan_as_category = False):
     # Optional: Remove 4 applications with XNA CODE_GENDER (train set)
     df = df[df['CODE_GENDER'] != 'XNA']
     
+    _, cat_cols = pp.get_feature_groups(df)
+    
+    for col in cat_cols:
+        cat_values_table = pp.check_categorical_cols_values(df, col = col)
+        s_low_values = set(cat_values_table[cat_values_table.loc[:, "% of Total"] < 1].index)
+    
+        if len(s_low_values) >= 2:
+            print("Decreasing the number of categories in {}...".format(col))
+            print("The following categories will be grouped: {}".format(s_low_values))
+            df.loc[df[col].isin(s_low_values), col] = "Other 2"
+    
     # Categorical features with Binary encode (0 or 1; two categories)
     for bin_feature in ['CODE_GENDER', 'FLAG_OWN_CAR', 'FLAG_OWN_REALTY']:
         df[bin_feature], uniques = pd.factorize(df[bin_feature])
@@ -68,6 +82,16 @@ def application_train_test(num_rows = None, nan_as_category = False):
     df['INCOME_PER_PERSON'] = df['AMT_INCOME_TOTAL'] / df['CNT_FAM_MEMBERS']
     df['ANNUITY_INCOME_PERC'] = df['AMT_ANNUITY'] / df['AMT_INCOME_TOTAL']
     df['PAYMENT_RATE'] = df['AMT_ANNUITY'] / df['AMT_CREDIT']
+    
+    flag_doc_cols = [c for c in df.columns if c.startswith("FLAG_DOCUMENT_")]
+    
+    df['CREDIT_INCOME_PERCENT'] = df['AMT_CREDIT'] / df['AMT_INCOME_TOTAL']
+    df['CREDIT_GOODS_PRICE_PERCENT'] = df['AMT_CREDIT'] / df['AMT_GOODS_PRICE']
+    df['CHILDREN_RATIO'] = df['CNT_CHILDREN'] / df['CNT_FAM_MEMBERS']
+    df["HOW_MANY_DOCUMENTS"] = df.loc[:, flag_doc_cols].sum(axis=1)
+    df["EXT_SOURCE_SUM"] = df.loc[:, ['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']].sum(axis=1)
+    df["EXT_SOURCE_AVG"] = df.loc[:, ['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']].mean(axis=1)
+    
     del test_df
     gc.collect()
     return df
@@ -118,14 +142,16 @@ def bureau_and_balance(num_rows = None, nan_as_category = True):
     active = bureau[bureau['CREDIT_ACTIVE_Active'] == 1]
     active_agg = active.groupby('SK_ID_CURR').agg(num_aggregations)
     active_agg.columns = pd.Index(['ACTIVE_' + e[0] + "_" + e[1].upper() for e in active_agg.columns.tolist()])
-    bureau_agg = bureau_agg.join(active_agg, how='left', on='SK_ID_CURR')
+    #bureau_agg = bureau_agg.join(active_agg, how='left', on='SK_ID_CURR')
+    bureau_agg = bureau_agg.join(active_agg, how='left')
     del active, active_agg
     gc.collect()
     # Bureau: Closed credits - using only numerical aggregations
     closed = bureau[bureau['CREDIT_ACTIVE_Closed'] == 1]
     closed_agg = closed.groupby('SK_ID_CURR').agg(num_aggregations)
     closed_agg.columns = pd.Index(['CLOSED_' + e[0] + "_" + e[1].upper() for e in closed_agg.columns.tolist()])
-    bureau_agg = bureau_agg.join(closed_agg, how='left', on='SK_ID_CURR')
+    #bureau_agg = bureau_agg.join(closed_agg, how='left', on='SK_ID_CURR')
+    bureau_agg = bureau_agg.join(closed_agg, how='left')
     del closed, closed_agg, bureau
     gc.collect()
     return bureau_agg
@@ -166,12 +192,14 @@ def previous_applications(num_rows = None, nan_as_category = True):
     approved = prev[prev['NAME_CONTRACT_STATUS_Approved'] == 1]
     approved_agg = approved.groupby('SK_ID_CURR').agg(num_aggregations)
     approved_agg.columns = pd.Index(['APPROVED_' + e[0] + "_" + e[1].upper() for e in approved_agg.columns.tolist()])
-    prev_agg = prev_agg.join(approved_agg, how='left', on='SK_ID_CURR')
+    #prev_agg = prev_agg.join(approved_agg, how='left', on='SK_ID_CURR')
+    prev_agg = prev_agg.join(approved_agg, how='left')
     # Previous Applications: Refused Applications - only numerical features
     refused = prev[prev['NAME_CONTRACT_STATUS_Refused'] == 1]
     refused_agg = refused.groupby('SK_ID_CURR').agg(num_aggregations)
     refused_agg.columns = pd.Index(['REFUSED_' + e[0] + "_" + e[1].upper() for e in refused_agg.columns.tolist()])
-    prev_agg = prev_agg.join(refused_agg, how='left', on='SK_ID_CURR')
+    #prev_agg = prev_agg.join(refused_agg, how='left', on='SK_ID_CURR')
+    prev_agg = prev_agg.join(refused_agg, how='left')
     del refused, refused_agg, approved, approved_agg, prev
     gc.collect()
     return prev_agg
@@ -270,7 +298,7 @@ def kfold_lightgbm(df, num_folds, stratified = False, debug= False):
 
         # LightGBM parameters found by Bayesian optimization
         clf = LGBMClassifier(
-            n_jobs=4,
+            nthread=4,
             n_estimators=10000,
             learning_rate=0.02,
             num_leaves=34,
@@ -289,6 +317,67 @@ def kfold_lightgbm(df, num_folds, stratified = False, debug= False):
 
         oof_preds[valid_idx] = clf.predict_proba(valid_x, num_iteration=clf.best_iteration_)[:, 1]
         sub_preds += clf.predict_proba(test_df[feats], num_iteration=clf.best_iteration_)[:, 1] / folds.n_splits
+
+        fold_importance_df = pd.DataFrame()
+        fold_importance_df["feature"] = feats
+        fold_importance_df["importance"] = clf.feature_importances_
+        fold_importance_df["fold"] = n_fold + 1
+        feature_importance_df = pd.concat([feature_importance_df, fold_importance_df], axis=0)
+        print('Fold %2d AUC : %.6f' % (n_fold + 1, roc_auc_score(valid_y, oof_preds[valid_idx])))
+        del clf, train_x, train_y, valid_x, valid_y
+        gc.collect()
+
+    print('Full AUC score %.6f' % roc_auc_score(train_df['TARGET'], oof_preds))
+    # Write submission file and plot feature importance
+    if not debug:
+        test_df['TARGET'] = sub_preds
+        test_df[['SK_ID_CURR', 'TARGET']].to_csv(submission_file_name, index= False)
+    display_importances(feature_importance_df)
+    return feature_importance_df
+
+def kfold_xgb(df, num_folds, stratified = False, debug= False):
+    # Divide in training/validation and test data
+    train_df = df[df['TARGET'].notnull()]
+    test_df = df[df['TARGET'].isnull()]
+    print("Starting LightGBM. Train shape: {}, test shape: {}".format(train_df.shape, test_df.shape))
+    del df
+    gc.collect()
+    # Cross validation model
+    if stratified:
+        folds = StratifiedKFold(n_splits= num_folds, shuffle=True, random_state=1001)
+    else:
+        folds = KFold(n_splits= num_folds, shuffle=True, random_state=1001)
+    # Create arrays and dataframes to store results
+    oof_preds = np.zeros(train_df.shape[0])
+    sub_preds = np.zeros(test_df.shape[0])
+    feature_importance_df = pd.DataFrame()
+    feats = [f for f in train_df.columns if f not in ['TARGET','SK_ID_CURR','SK_ID_BUREAU','SK_ID_PREV','index']]
+    
+    for n_fold, (train_idx, valid_idx) in enumerate(folds.split(train_df[feats], train_df['TARGET'])):
+        train_x, train_y = train_df[feats].iloc[train_idx], train_df['TARGET'].iloc[train_idx]
+        valid_x, valid_y = train_df[feats].iloc[valid_idx], train_df['TARGET'].iloc[valid_idx]
+
+        # LightGBM parameters found by Bayesian optimization
+        clf = XGBClassifier(
+            nthread=4,
+            n_estimators=10000,
+            learning_rate=0.02,
+            num_leaves=34,
+            colsample_bytree=0.9497036,
+            subsample=0.8715623,
+            max_depth=8,
+            reg_alpha=0.041545473,
+            reg_lambda=0.0735294,
+            min_split_gain=0.0222415,
+            min_child_weight=39.3259775,
+            silent=-1,
+            verbose=-1, )
+
+        clf.fit(train_x, train_y, eval_set=[(train_x, train_y), (valid_x, valid_y)], 
+            eval_metric= 'auc', verbose= 100, early_stopping_rounds= 200)
+
+        oof_preds[valid_idx] = clf.predict_proba(valid_x, ntree_limit=clf.best_iteration)[:, 1]
+        sub_preds += clf.predict_proba(test_df[feats], ntree_limit=clf.best_iteration)[:, 1] / folds.n_splits
 
         fold_importance_df = pd.DataFrame()
         fold_importance_df["feature"] = feats
@@ -327,34 +416,36 @@ def main(debug = False):
         df = df.join(bureau, how='left', on='SK_ID_CURR')
         del bureau
         gc.collect()
-#    with timer("Process previous_applications"):
-#        prev = previous_applications(num_rows)
-#        print("Previous applications df shape:", prev.shape)
-#        df = df.join(prev, how='left', on='SK_ID_CURR')
-#        del prev
-#        gc.collect()
-#    with timer("Process POS-CASH balance"):
-#        pos = pos_cash(num_rows)
-#        print("Pos-cash balance df shape:", pos.shape)
-#        df = df.join(pos, how='left', on='SK_ID_CURR')
-#        del pos
-#        gc.collect()
-#    with timer("Process installments payments"):
-#        ins = installments_payments(num_rows)
-#        print("Installments payments df shape:", ins.shape)
-#        df = df.join(ins, how='left', on='SK_ID_CURR')
-#        del ins
-#        gc.collect()
-#    with timer("Process credit card balance"):
-#        cc = credit_card_balance(num_rows)
-#        print("Credit card balance df shape:", cc.shape)
-#        df = df.join(cc, how='left', on='SK_ID_CURR')
-#        del cc
-#        gc.collect()
+    with timer("Process previous_applications"):
+        prev = previous_applications(num_rows)
+        print("Previous applications df shape:", prev.shape)
+        df = df.join(prev, how='left', on='SK_ID_CURR')
+        del prev
+        gc.collect()
+    with timer("Process POS-CASH balance"):
+        pos = pos_cash(num_rows)
+        print("Pos-cash balance df shape:", pos.shape)
+        df = df.join(pos, how='left', on='SK_ID_CURR')
+        del pos
+        gc.collect()
+    with timer("Process installments payments"):
+        ins = installments_payments(num_rows)
+        print("Installments payments df shape:", ins.shape)
+        df = df.join(ins, how='left', on='SK_ID_CURR')
+        del ins
+        gc.collect()
+    with timer("Process credit card balance"):
+        cc = credit_card_balance(num_rows)
+        print("Credit card balance df shape:", cc.shape)
+        df = df.join(cc, how='left', on='SK_ID_CURR')
+        del cc
+        gc.collect()
     with timer("Run LightGBM with kfold"):
-        feat_importance = kfold_lightgbm(df, num_folds= 5, stratified= False, debug= debug)
+        #feat_importance = kfold_lightgbm(df, num_folds= 5, stratified= False, debug= debug)
+        feat_importance_xgb = kfold_xgb(df, num_folds= 5, stratified= False, debug= debug)
+    return feat_importance_xgb
 
 if __name__ == "__main__":
     submission_file_name = "submission_kernel02.csv"
     with timer("Full model run"):
-        main(debug = False)
+        feat_importance = main(debug = False)
