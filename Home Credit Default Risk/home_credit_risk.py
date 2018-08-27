@@ -37,7 +37,7 @@ bureau_agg = ld.bureau(nrows = None, silent = True)
 train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
 test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
 
-del duplicated_bureau_agg, duplicated_bureau_cat_num_agg
+del bureau_agg
 gc.collect()
 
 train.to_csv("input/train_engineered_2.csv", compression="zip")
