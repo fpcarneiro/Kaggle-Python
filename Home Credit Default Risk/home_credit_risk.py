@@ -107,7 +107,8 @@ del duplicated_train
 gc.collect()
 
 
-
+train.to_csv("input/train_engineered_1.csv", compression="zip")
+test.to_csv("input/test_engineered_1.csv", compression="zip")
 
 
 bureau = pp.read_dataset_csv(filename = "bureau.csv")
@@ -132,18 +133,23 @@ print(pp.check_missing(bureau[pp.get_numerical_missing_cols(bureau)]))
 
 #df, df_name, group_var = ['SK_ID_CURR', 'CREDIT_ACTIVE'], funcs = ['sum', 'mean'], target_numvar = ['DAYS_CREDIT', 'AMT_ANNUITY']
 numeric_cols = pp.get_dtype_columns(bureau, dtypes = [np.dtype(np.int64), np.dtype(np.float64)])
-bureau_cat_num_agg = pp.agg_categorical_numeric(bureau, df_name = "bureau", 
+bureau_cat_num_agg = pp.agg_categorical_numeric(bureau, df_name = "BUREAU", 
                                                 funcs = ['sum', 'mean', 'std'], group_var = ['SK_ID_CURR', 'CREDIT_ACTIVE'], 
                                                 target_numvar = numeric_cols)
 
 bureau = pp.convert_types(bureau, print_info = True)
 bureau_cat_num_agg = pp.convert_types(bureau_cat_num_agg, print_info = True)
 
-bureau_agg = pp.get_engineered_features(bureau.drop(['SK_ID_BUREAU'], axis=1), group_var = 'SK_ID_CURR', df_name = 'BUREAU')
+bureau.to_csv("input/bureau_engineered.csv", compression="zip")
+bureau_cat_num_agg.to_csv("input/bureau_cat_num_agg.csv", compression="zip")
+
+bureau_agg = pp.get_engineered_features(bureau.drop(['SK_ID_BUREAU'], axis=1), group_var = 'SK_ID_CURR', df_name = 'BUREAU', num_agg_funcs = ['count', 'mean', 'median', 'sum'])
 
 duplicated_bureau_agg = pp.duplicate_columns(bureau_agg, verbose = True, progress = False)
 if len(duplicated_bureau_agg) > 0:
     bureau_agg.drop(list(duplicated_bureau_agg.keys()), axis=1, inplace = True)
+    
+bureau_agg = pp.convert_types(bureau_agg, print_info = True)
 
 train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
 test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
@@ -162,6 +168,9 @@ del bureau_agg, bureau_ct_table, bureau_cc_table, s_bureau_ct, s_bureau_cc, bure
 del bureau_cat_num_agg, numeric_cols
 del duplicated_bureau_agg, duplicated_bureau_cat_num_agg
 gc.collect()
+
+train.to_csv("input/train_engineered_2.csv", compression="zip")
+test.to_csv("input/test_engineered_2.csv", compression="zip")
 
 group_vars = ['SK_ID_BUREAU', 'SK_ID_CURR']
 bureau_balance = pp.read_dataset_csv(filename = "bureau_balance.csv")
@@ -186,6 +195,8 @@ for c in cols_status_percent:
 duplicated_bureau_balance_agg_by_client = pp.duplicate_columns(bureau_balance_agg_by_client, verbose = True, progress = False)
 if len(duplicated_bureau_balance_agg_by_client) > 0:
     bureau_balance_agg_by_client.drop(list(duplicated_bureau_balance_agg_by_client.keys()), axis=1, inplace = True)
+    
+bureau_balance_agg_by_client = pp.convert_types(bureau_balance_agg_by_client, print_info = True)
 
 train = train.merge(bureau_balance_agg_by_client, on = 'SK_ID_CURR', how = 'left')
 test = test.merge(bureau_balance_agg_by_client, on = 'SK_ID_CURR', how = 'left')
@@ -199,6 +210,9 @@ del cols_status, bureau_balance_agg_by_client
 del cols_status_percent
 del c, duplicated_bureau_balance_agg_by_client
 gc.collect()
+
+train.to_csv("input/train_engineered_3.csv", compression="zip")
+test.to_csv("input/test_engineered_3.csv", compression="zip")
 
 previous_application = pp.read_dataset_csv(filename = "previous_application.csv")
 
@@ -281,7 +295,7 @@ previous_application_cat_num_agg = pp.agg_categorical_numeric(previous_applicati
                                                 funcs = ['sum', 'mean', 'std'], group_var = ['SK_ID_CURR', 'NAME_CONTRACT_STATUS'], 
                                                 target_numvar = numeric_cols)
 
-previous_application_agg = pp.get_engineered_features(previous_application.drop(['SK_ID_PREV'], axis=1), group_var = 'SK_ID_CURR', df_name = 'previous')
+previous_application_agg = pp.get_engineered_features(previous_application.drop(['SK_ID_PREV'], axis=1), group_var = 'SK_ID_CURR', df_name = 'previous', num_agg_funcs = ['count', 'mean', 'median', 'sum'])
 
 duplicated_previous_application_agg = pp.duplicate_columns(previous_application_agg, verbose = True, progress = False)
 if len(duplicated_previous_application_agg) > 0:
@@ -290,6 +304,9 @@ if len(duplicated_previous_application_agg) > 0:
 duplicated_previous_application_cat_num_agg = pp.duplicate_columns(previous_application_cat_num_agg, verbose = True, progress = False)
 if len(duplicated_previous_application_cat_num_agg) > 0:
     previous_application_cat_num_agg.drop(list(duplicated_previous_application_cat_num_agg.keys()), axis=1, inplace = True)
+    
+previous_application_agg_id_columns = list(set([c for c in previous_application_agg.columns if c.startswith("SK_ID_")] + [c for c in previous_application_cat_num_agg.columns if c.startswith("SK_ID_")]))
+previous_application_agg_columns = list(set([c for c in previous_application_agg.columns if c not in previous_application_agg_id_columns] + [c for c in previous_application_cat_num_agg.columns if c not in previous_application_agg_id_columns]))
 
 previous_application_agg = pp.convert_types(previous_application_agg, print_info = True)
 previous_application_cat_num_agg = pp.convert_types(previous_application_cat_num_agg, print_info = True)
@@ -307,15 +324,43 @@ del previous_application_ct_table, previous_application_nsi_table, previous_appl
 del previous_application_cat_num_agg, duplicated_previous_application_agg, duplicated_previous_application_cat_num_agg
 gc.collect()
 
+train.to_csv("input/train_engineered_4.csv", compression="zip")
+test.to_csv("input/test_engineered_4.csv", compression="zip")
+
 group_vars = ['SK_ID_PREV', 'SK_ID_CURR']
-cash = pp.convert_types(pp.read_dataset_csv(filename = "POS_CASH_balance.csv"), print_info=True)
-cash_agg = pp.aggregate_client_2(cash, group_vars = group_vars, df_names = ['cash', 'client'])
-train = train.merge(cash_agg, on = 'SK_ID_CURR', how = 'left')
-test = test.merge(cash_agg, on = 'SK_ID_CURR', how = 'left')
+cash = pp.read_dataset_csv(filename = "POS_CASH_balance.csv")
+
+cash_ncs_table = pp.check_categorical_cols_values(cash, col = "NAME_CONTRACT_STATUS")
+s_cash = set(cash_ncs_table[cash_ncs_table.loc[:, "% of Total"] < 1].index)
+cash.loc[cash.NAME_CONTRACT_STATUS.isin(s_cash), 'NAME_CONTRACT_STATUS'] = "Other 2"
+
+cash = pp.convert_types(cash, print_info=True)
+
+cash_agg = pp.get_engineered_features(cash, group_var = 'SK_ID_PREV', df_name = "CASH", num_agg_funcs = ['count', 'min', 'max'], cat_agg_funcs = ['sum'], cols_alias = ['count'])
+cash_agg = cash_agg.merge(cash[[group_vars[0], group_vars[1]]], on = group_vars[0], how = 'inner')
+cash_agg = cash_agg.drop([group_vars[0]], axis=1)
+cash_agg_by_client = pp.agg_numeric(cash_agg, group_var = group_vars[1], df_name = 'CLIENT', agg_funcs = ['count', 'mean', 'median', 'sum'])
+
+#cash_agg = pp.aggregate_client_2(cash, group_vars = group_vars, df_names = ['cash', 'client'])
+
+cash_agg = pp.convert_types(cash_agg, print_info = True)
+cash_agg_by_client = pp.convert_types(cash_agg_by_client, print_info = True)
+
+duplicated_cash_agg_by_client = pp.duplicate_columns(cash_agg_by_client, verbose = True, progress = False)
+if len(duplicated_cash_agg_by_client) > 0:
+    cash_agg_by_client.drop(list(duplicated_cash_agg_by_client.keys()), axis=1, inplace = True)
+
+train = train.merge(cash_agg_by_client, on = 'SK_ID_CURR', how = 'left')
+test = test.merge(cash_agg_by_client, on = 'SK_ID_CURR', how = 'left')
 
 gc.enable()
 del cash, cash_agg
+del cash_ncs_table, s_cash
+del cash_agg_by_client, duplicated_cash_agg_by_client
 gc.collect()
+
+train.to_csv("input/train_engineered_5.csv", compression="zip")
+test.to_csv("input/test_engineered_5.csv", compression="zip")
 
 credit_card_balance = pp.convert_types(pp.read_dataset_csv(filename = "credit_card_balance.csv"), print_info=True)
 credit_card_balance_agg = pp.aggregate_client_2(credit_card_balance, group_vars = group_vars, df_names = ['credit', 'client'])
@@ -328,11 +373,17 @@ gc.collect()
 
 installments_payments = pp.convert_types(pp.read_dataset_csv(filename = "installments_payments.csv"), print_info=True)
 installments_payments_agg = pp.aggregate_client_2(installments_payments, group_vars = group_vars, df_names = ['installments', 'client'])
+
+duplicated_installments_payments_agg = pp.duplicate_columns(installments_payments_agg, verbose = True, progress = False)
+if len(duplicated_installments_payments_agg) > 0:
+    installments_payments_agg.drop(list(duplicated_installments_payments_agg.keys()), axis=1, inplace = True)
+
 train = train.merge(installments_payments_agg, on = 'SK_ID_CURR', how = 'left')
 test = test.merge(installments_payments_agg, on = 'SK_ID_CURR', how = 'left')
 
 gc.enable()
 del installments_payments, installments_payments_agg, group_vars
+del duplicated_installments_payments_agg
 gc.collect()
 
 train_X = train.fillna(0)
@@ -346,19 +397,22 @@ ids = test_X['SK_ID_CURR']
 test_X = test_X.drop(['SK_ID_CURR'], axis=1)
 
 duplicated = pp.duplicate_columns(train_X, verbose = True, progress = False)
-train_X.drop(list(duplicated.keys()), axis=1, inplace = True)
-test_X.drop(list(duplicated.keys()), axis=1, inplace = True)
+if len(duplicated)>0:
+    train_X.drop(list(duplicated.keys()), axis=1, inplace = True)
+    test_X.drop(list(duplicated.keys()), axis=1, inplace = True)
 
-features_variance = fs.list_features_low_variance(train_X, train_y, .99)
+features_variance = fs.list_features_low_variance(train_X, train_y, .98)
 train_X_reduced = train_X[features_variance]
 test_X_reduced = test_X[features_variance]
+
+del train_X, test_X
+gc.collect()
 
 pipeline = Pipeline([
                      ('scaler', MinMaxScaler(feature_range = (0, 1))),
                      #('low_variance', VarianceThreshold(0.98 * (1 - 0.98))),
                      ('reduce_dim', SelectFromModel(lgb.LGBMClassifier(boosting_type='gbdt', n_estimators=1500, objective = 'binary', 
-                                   class_weight = 'balanced', learning_rate = 0.05, 
-                                   reg_alpha = 0.1, reg_lambda = 0.1, 
+                                   learning_rate = 0.05, silent = False,
                                    subsample = 0.8, colsample_bytree = 0.5))),
                      ])
 
@@ -379,11 +433,11 @@ xg_test = xgb.DMatrix(data=test_X_reduced, feature_names = features_select_from_
 xgb_params = dict()
 xgb_params["booster"] = "gbtree"
 xgb_params["objective"] = "binary:logistic"
-xgb_params["colsample_bytree"] = 0.5
-xgb_params["subsample"] = 0.8
+xgb_params["colsample_bytree"] = 0.4385
+xgb_params["subsample"] = 0.7379
 xgb_params["max_depth"] = 3
-xgb_params['reg_alpha'] = 0.55
-xgb_params['reg_lambda'] = 0.85
+xgb_params['reg_alpha'] = 0.1
+xgb_params['reg_lambda'] = 0.1
 xgb_params["learning_rate"] = 0.09
 xgb_params["min_child_weight"] = 2
 
@@ -392,7 +446,7 @@ xgb_results = xgb.cv(dtrain=xgb_train, params=xgb_params, nfold=3,
 #xgb_results.head()
 #print((xgb_results["test-auc-mean"]).tail(1))
 
-xgbooster = xgb.train(params = xgb_params, dtrain = xgb_train, num_boost_round = 850, maximize = True)
+xgbooster = xgb.train(params = xgb_params, dtrain = xgb_train, num_boost_round = 750, maximize = True)
 
 #import matplotlib.pyplot as plt
 
@@ -415,26 +469,29 @@ lgb_train = lgb.Dataset(train_X_reduced, label=train_y, feature_name = features_
 lgb_params = {}
 lgb_params['boosting_type'] = 'gbdt'
 lgb_params['objective'] = 'binary'
-lgb_params['learning_rate'] = 0.05
+lgb_params['learning_rate'] = 0.0596
 lgb_params['reg_alpha'] = 0.1
 lgb_params['reg_lambda'] = 0.1
-lgb_params['subsample'] = 0.8
-lgb_params["colsample_bytree"] = 0.5
+lgb_params['max_depth'] = 3
+lgb_params['subsample'] = 0.7379
+lgb_params["colsample_bytree"] = 0.4385
 lgb_params['metric'] = 'auc'
 
 # Params to test later: stratified, shuffle, 
 lgb_results = lgb.cv(train_set = lgb_train, params = lgb_params, num_boost_round = 1500, nfold = 3,
        metrics='auc', early_stopping_rounds = 50, verbose_eval = 10, seed=2018)
 
-lgb_booster = lgb.train(params = lgb_params, train_set = lgb_train, num_boost_round = 590)
+lgb_booster = lgb.train(params = lgb_params, train_set = lgb_train, num_boost_round = 1450)
 
 lgb_predict = lgb_booster.predict(test_X_reduced)
 my_submission = pd.DataFrame({'SK_ID_CURR': ids, 'TARGET': lgb_predict})
 my_submission.to_csv("lgb_dataset.csv", index=False)
+#[1260]  cv_agg's auc: 0.780272 + 0.00120376
 
+lgb_results = lgb.cv(train_set = lgb_train, params = lgb_grid.best_params_, num_boost_round = 1500, nfold = 3,
+       metrics='auc', early_stopping_rounds = 50, verbose_eval = 10, seed=2018)
 
-
-
+lgb_booster = lgb.train(params = lgb_grid.best_params_, train_set = lgb_train, num_boost_round = 830)
 
 
 
@@ -541,26 +598,33 @@ my_submission.to_csv("xgb_dmatrix.csv", index=False)
 
 
 
+lgb.LGBMClassifier()
 
 
 
+# GRID SEARCH
+from sklearn.model_selection import RandomizedSearchCV
+from scipy.stats import randint, uniform
+from xgboost import XGBClassifier
 
-from sklearn.model_selection import KFold
-# Create the kfold object
-k_fold = KFold(n_splits = 10, shuffle = True, random_state = 50)
+xgb_params_fixed = {"objective" : "binary:logistic", "silent" : False}
 
-for train_indices, valid_indices in k_fold.split(features):
-    train_features, train_labels = train_X[train_indices], train_y[train_indices]
-    valid_features, valid_labels = train_X[valid_indices], train_y[valid_indices]
-    
-    model = lgb.LGBMClassifier(n_estimators=1500, objective = 'binary', 
-                                   class_weight = 'balanced', learning_rate = 0.05, 
-                                   reg_alpha = 0.1, reg_lambda = 0.1, 
-                                   subsample = 0.8, n_jobs = -1, random_state = 50)
-    
-    model.fit(train_features, train_labels, eval_metric = 'auc',
-                  eval_set = [(valid_features, valid_labels), (train_features, train_labels)],
-                  eval_names = ['valid', 'train'], categorical_feature = "",
-                  early_stopping_rounds = 100, verbose = 200)
-    
-    best_iteration = model.best_iteration_
+xgb_params_distribution = {"max_depth" : [1,3,5],
+                      "n_estimators" : [100],
+                      "learning_rate": uniform(),
+                      "subsample": [0.5],
+                      "colsample_bytree" : [0.5]}
+
+lgb_params_fixed = {"objective" : "binary", "silent" : False}
+
+lgb_params_distribution = {"max_depth" : [3,5],
+                      "n_estimators" : randint(400, 1000),
+                      "learning_rate": [0.0596],
+                      "subsample": [0.7379],
+                      "colsample_bytree" : [0.438]}
+
+lgb_grid = RandomizedSearchCV(estimator = lgb.LGBMClassifier(**lgb_params_fixed, seed = 123), param_distributions=lgb_params_distribution, n_iter = 5, cv = 3, scoring = "roc_auc", random_state = 123)
+lgb_grid.fit(train_X_reduced, train_y)
+
+
+colsample_bytree=0.4385722446796244, learning_rate=0.05967789660956835, max_depth=3, n_estimators=408, subsample=0.7379954057320357, score=0.7781033030827368, total= 1.2min
