@@ -23,149 +23,20 @@ import gc
 
 import feature_selection as fs
 
+import load as ld
+
 plt.style.use('fivethirtyeight')
 
-train, test = pp.read_train_test(train_file = 'application_train.csv', test_file = 'application_test.csv')
-
-train = train[train['CODE_GENDER'] != 'XNA']
-
-train.loc[:, 'HOUR_APPR_PROCESS_START'] = train.loc[:, 'HOUR_APPR_PROCESS_START'].astype('object')
-test.loc[:, 'HOUR_APPR_PROCESS_START'] = test.loc[:, 'HOUR_APPR_PROCESS_START'].astype('object')
-
-# Decrease number of categories in ORGANIZATION_TYPE
-train_ot_table = pp.check_categorical_cols_values(train, col = "ORGANIZATION_TYPE")
-s_train = set(train_ot_table[train_ot_table.loc[:, "% of Total"] < 1].index)
-
-test_ot_table = pp.check_categorical_cols_values(test, col = "ORGANIZATION_TYPE")
-s_test = set(test_ot_table[test_ot_table.loc[:, "% of Total"] < 1].index)
-
-l_union = list(s_train.union(s_test))
-
-train.loc[train.ORGANIZATION_TYPE.isin(l_union), 'ORGANIZATION_TYPE'] = "Other 2"
-test.loc[test.ORGANIZATION_TYPE.isin(l_union), 'ORGANIZATION_TYPE'] = "Other 2"
-
-gc.enable()
-del l_union, train_ot_table, test_ot_table
-gc.collect()
-
-train['DAYS_EMPLOYED_ANOM'] = train["DAYS_EMPLOYED"] == 365243
-train["DAYS_EMPLOYED"].replace({365243: np.nan}, inplace = True)
-test['DAYS_EMPLOYED_ANOM'] = test["DAYS_EMPLOYED"] == 365243
-test["DAYS_EMPLOYED"].replace({365243: np.nan}, inplace = True)
-
-cat_cols = pp.get_dtype_columns(train, [np.dtype(object)])
-cat_cols2encode = [c for c in cat_cols if len(train[c].value_counts(dropna=False)) <= 2]
-
-le = LabelEncoder()
-for col in cat_cols2encode:
-    le.fit(train[col])
-    train[col] = le.transform(train[col])
-    test[col] = le.transform(test[col])
-
-# CATEGORICAL MISSING
-print(pp.check_missing(train[pp.get_categorical_missing_cols(train)]))
-print(pp.check_missing(test[pp.get_categorical_missing_cols(test)]))
-
-train.NAME_TYPE_SUITE.fillna("Unaccompanied", inplace= True)
-test.NAME_TYPE_SUITE.fillna("Unaccompanied", inplace= True)
-
-# High density missing categorical columns - deserves a column when performing get_dummies
-# FONDKAPREMONT_MODE, WALLSMATERIAL_MODE, HOUSETYPE_MODE, EMERGENCYSTATE_MODE, OCCUPATION_TYPE
-
-train = pd.get_dummies(train, dummy_na = True)
-test = pd.get_dummies(test, dummy_na = True)
-
-train_labels = train['TARGET']
-train, test = train.align(test, join = 'inner', axis = 1)
-train['TARGET'] = train_labels
-
-# NUMERICAL MISSING
-print(pp.check_missing(train[pp.get_numerical_missing_cols(train)]))
-print(pp.check_missing(test[pp.get_numerical_missing_cols(test)]))
-
-num_missing_trans = pp.HandleMissingMedianTransformer()
-train = num_missing_trans.fit_transform(train)
-test = num_missing_trans.fit_transform(test)
-
-train = pp.convert_types(train, print_info = True)
-test = pp.convert_types(test, print_info = True)
-
-# FEATURE ENGINEERING
-train = pp.get_domain_knowledge_features(train)
-test = pp.get_domain_knowledge_features(test)
-
-duplicated_train = pp.duplicate_columns(train, verbose = True, progress = False)
-train.drop(list(duplicated_train.keys()), axis=1, inplace = True)
-test.drop(list(duplicated_train.keys()), axis=1, inplace = True)
-
-target_column = "TARGET"
-application_id_columns = [c for c in test.columns if c.startswith("SK_ID_")]
-application_columns = [c for c in test.columns if c not in application_id_columns]
-
-del le, col, cat_cols, cat_cols2encode, num_missing_trans, train_labels
-del duplicated_train
-gc.collect()
-
+train, test = ld.load_train_test(nrows = None, silent = True)
 
 train.to_csv("input/train_engineered_1.csv", compression="zip")
 test.to_csv("input/test_engineered_1.csv", compression="zip")
 
-
-bureau = pp.read_dataset_csv(filename = "bureau.csv")
-print(pp.check_missing(bureau[pp.get_numerical_missing_cols(bureau)]))
-bureau = pp.handle_missing_median(bureau, pp.get_numerical_missing_cols(bureau), group_by_cols = ["SK_ID_CURR"])
-print(pp.check_missing(bureau[pp.get_numerical_missing_cols(bureau)]))
-
-bureau_ct_table = pp.check_categorical_cols_values(bureau, col = "CREDIT_TYPE")
-s_bureau_ct = set(bureau_ct_table[bureau_ct_table.loc[:, "% of Total"] < 1].index)
-bureau.loc[bureau.CREDIT_TYPE.isin(s_bureau_ct), 'CREDIT_TYPE'] = "Other"
-
-bureau_cc_table = pp.check_categorical_cols_values(bureau, col = "CREDIT_CURRENCY")
-s_bureau_cc = set(bureau_cc_table[bureau_cc_table.loc[:, "% of Total"] < 1].index)
-bureau.loc[bureau.CREDIT_CURRENCY.isin(s_bureau_cc), 'CREDIT_CURRENCY'] = "Other"
-
-bureau_ca_table = pp.check_categorical_cols_values(bureau, col = "CREDIT_ACTIVE")
-s_bureau_ca = set(bureau_ca_table[bureau_ca_table.loc[:, "% of Total"] < 1].index)
-bureau.loc[bureau.CREDIT_ACTIVE.isin(s_bureau_ca), 'CREDIT_ACTIVE'] = "Other"
-
-bureau = pp.handle_missing_median(bureau, pp.get_numerical_missing_cols(bureau), group_by_cols = ["CREDIT_TYPE"])
-print(pp.check_missing(bureau[pp.get_numerical_missing_cols(bureau)]))
-
-#df, df_name, group_var = ['SK_ID_CURR', 'CREDIT_ACTIVE'], funcs = ['sum', 'mean'], target_numvar = ['DAYS_CREDIT', 'AMT_ANNUITY']
-numeric_cols = pp.get_dtype_columns(bureau, dtypes = [np.dtype(np.int64), np.dtype(np.float64)])
-bureau_cat_num_agg = pp.agg_categorical_numeric(bureau, df_name = "BUREAU", 
-                                                funcs = ['sum', 'mean', 'std'], group_var = ['SK_ID_CURR', 'CREDIT_ACTIVE'], 
-                                                target_numvar = numeric_cols)
-
-bureau = pp.convert_types(bureau, print_info = True)
-bureau_cat_num_agg = pp.convert_types(bureau_cat_num_agg, print_info = True)
-
-bureau.to_csv("input/bureau_engineered.csv", compression="zip")
-bureau_cat_num_agg.to_csv("input/bureau_cat_num_agg.csv", compression="zip")
-
-bureau_agg = pp.get_engineered_features(bureau.drop(['SK_ID_BUREAU'], axis=1), group_var = 'SK_ID_CURR', df_name = 'BUREAU', num_agg_funcs = ['count', 'mean', 'median', 'sum'])
-
-duplicated_bureau_agg = pp.duplicate_columns(bureau_agg, verbose = True, progress = False)
-if len(duplicated_bureau_agg) > 0:
-    bureau_agg.drop(list(duplicated_bureau_agg.keys()), axis=1, inplace = True)
-    
-bureau_agg = pp.convert_types(bureau_agg, print_info = True)
+bureau_agg = ld.bureau(nrows = None, silent = True)
 
 train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
 test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
 
-duplicated_bureau_cat_num_agg = pp.duplicate_columns(bureau_cat_num_agg, verbose = True, progress = False)
-if len(duplicated_bureau_cat_num_agg) > 0:
-    bureau_cat_num_agg.drop(list(bureau_cat_num_agg.keys()), axis=1, inplace = True)
-
-train = train.merge(bureau_cat_num_agg, on = 'SK_ID_CURR', how = 'left')
-test = test.merge(bureau_cat_num_agg, on = 'SK_ID_CURR', how = 'left')
-
-bureau_agg_id_columns = list(set([c for c in bureau_agg.columns if c.startswith("SK_ID_")] + [c for c in bureau_cat_num_agg.columns if c.startswith("SK_ID_")]))
-bureau_agg_columns = list(set([c for c in bureau_agg.columns if c not in bureau_agg_id_columns] + [c for c in bureau_cat_num_agg.columns if c not in bureau_agg_id_columns]))
-
-del bureau_agg, bureau_ct_table, bureau_cc_table, s_bureau_ct, s_bureau_cc, bureau_ca_table, s_bureau_ca
-del bureau_cat_num_agg, numeric_cols
 del duplicated_bureau_agg, duplicated_bureau_cat_num_agg
 gc.collect()
 

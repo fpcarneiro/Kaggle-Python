@@ -13,12 +13,12 @@ DATADIR = "input/"
 def list_files(input_dir = "input/"):
     return (os.listdir(input_dir))
 
-def read_dataset_csv(input_dir = "input/", filename = ""):
-    return (pd.read_csv(input_dir + filename))
+def read_dataset_csv(input_dir = "input/", filename = "", nrows = None):
+    return (pd.read_csv(input_dir + filename, nrows = nrows))
 
-def read_train_test(input_dir = "input/", train_file = 'train.csv', test_file = 'test.csv'):
-    train = pd.read_csv(input_dir + train_file)
-    test = pd.read_csv(input_dir + test_file)
+def read_train_test(input_dir = "input/", train_file = 'train.csv', test_file = 'test.csv', nrows = None):
+    train = pd.read_csv(input_dir + train_file, nrows = nrows)
+    test = pd.read_csv(input_dir + test_file, nrows = nrows)
     return train, test
 
 def get_memory_usage_mb(dataset):
