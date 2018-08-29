@@ -479,7 +479,9 @@ def main(debug = False):
         importances[importances["Feature Importance"]!=0].sort_values("Feature Importance")
         
         print(importances)
-        features = importances[importances["Feature Importance"]!=0].sort_values("Feature Importance")
+        threshold = np.mean(importances["Feature Importance"])
+        print("Eliminating features with importance lower than {}".format(threshold))
+        features = importances[importances["Feature Importance"]>=threshold].sort_values("Feature Importance")
         print(list(features.index))
         
         feat_importance_lgb = kfold_lightgbm(df[list(features.index) + ['TARGET','SK_ID_CURR','index']], num_folds= 5, stratified= False, debug= debug)
@@ -489,4 +491,4 @@ def main(debug = False):
 if __name__ == "__main__":
     submission_file_name = "submission_kernel03.csv"
     with timer("Full model run"):
-        feat_importance = main(debug = False)
+        feat_importance = main(debug = True)
