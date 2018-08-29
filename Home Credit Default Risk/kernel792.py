@@ -29,6 +29,10 @@ from sklearn.model_selection import KFold, StratifiedKFold
 import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.pipeline import Pipeline
+from sklearn.feature_selection import VarianceThreshold, SelectFromModel
+
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 import preprocessing as pp
@@ -100,6 +104,21 @@ def application_train_test(num_rows = None, nan_as_category = False):
 def bureau_and_balance(num_rows = None, nan_as_category = True):
     bureau = pd.read_csv('input/bureau.csv', nrows = num_rows)
     bb = pd.read_csv('input/bureau_balance.csv', nrows = num_rows)
+    
+    # Decrease number of categories in ORGANIZATION_TYPE
+    _, cat_cols = pp.get_feature_groups(bureau)
+    
+    print("Decreading the number of categories...")
+    
+    for col in cat_cols:
+        cat_values_table = pp.check_categorical_cols_values(bureau, col = col)
+        s_low_values = set(cat_values_table[cat_values_table.loc[:, "% of Total"] < 1].index)
+        
+        if len(s_low_values) >= 2:
+            print("Decreasing the number of categories in {}...".format(col))
+            print("The following categories will be grouped: {}".format(s_low_values))
+            bureau.loc[bureau[col].isin(s_low_values), col] = "Other 2"
+    
     bb, bb_cat = one_hot_encoder(bb, nan_as_category)
     bureau, bureau_cat = one_hot_encoder(bureau, nan_as_category)
     
@@ -374,7 +393,7 @@ def kfold_xgb(df, num_folds, stratified = False, debug= False):
             verbose=-1, )
 
         clf.fit(train_x, train_y, eval_set=[(train_x, train_y), (valid_x, valid_y)], 
-            eval_metric= 'auc', verbose= 100, early_stopping_rounds= 200)
+            eval_metric= 'auc', verbose= 10, early_stopping_rounds= 200)
 
         oof_preds[valid_idx] = clf.predict_proba(valid_x, ntree_limit=clf.best_iteration)[:, 1]
         sub_preds += clf.predict_proba(test_df[feats], ntree_limit=clf.best_iteration)[:, 1] / folds.n_splits
@@ -441,11 +460,33 @@ def main(debug = False):
         del cc
         gc.collect()
     with timer("Run LightGBM with kfold"):
-        #feat_importance = kfold_lightgbm(df, num_folds= 5, stratified= False, debug= debug)
-        feat_importance_xgb = kfold_xgb(df, num_folds= 5, stratified= False, debug= debug)
-    return feat_importance_xgb
+        #duplicated = pp.duplicate_columns(df, verbose = True, progress = False)
+        #if len(duplicated) > 0:
+        #    df.drop(list(duplicated.keys()), axis=1, inplace = True)
+        cl = LGBMClassifier(boosting_type='gbdt', n_estimators=1500, objective = 'binary', 
+                                   learning_rate = 0.05, silent = False,
+                                   subsample = 0.8, colsample_bytree = 0.5)
+        
+        feats = [f for f in df.columns if f not in ['TARGET','SK_ID_CURR','SK_ID_BUREAU','SK_ID_PREV','index']]
+        
+        train_df = df[df['TARGET'].notnull()]
+        train_y = train_df['TARGET']
+        train_X = train_df[feats]
+        cl.fit(train_X, train_y)
+        
+        importances = pd.DataFrame({"Feature Importance":cl.feature_importance()}, index=train_X.columns)
+        importances.sort_values("Feature Importance", ascending=False, inplace = True)
+        importances[importances["Feature Importance"]!=0].sort_values("Feature Importance")
+        
+        print(importances)
+        features = importances[importances["Feature Importance"]!=0].sort_values("Feature Importance")
+        print(list(features.index))
+        
+        feat_importance_lgb = kfold_lightgbm(df[list(features.index) + ['TARGET','SK_ID_CURR','index']], num_folds= 5, stratified= False, debug= debug)
+        #feat_importance_xgb = kfold_xgb(df, num_folds= 5, stratified= False, debug= debug)
+    return feat_importance_lgb
 
 if __name__ == "__main__":
-    submission_file_name = "submission_kernel02.csv"
+    submission_file_name = "submission_kernel03.csv"
     with timer("Full model run"):
         feat_importance = main(debug = False)
