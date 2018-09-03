@@ -116,7 +116,7 @@ def bureau(nrows = None, silent = True, treat_cat_missing = False, treat_num_mis
 #       print(pp.check_missing(bureau[pp.get_numerical_missing_cols(bureau)]))
     
     if not silent:
-        print("Bureau samples: {}".format(len(bureau)))
+        print("Bureau samples: {}".format(bureau.shape))
     
     # Decrease number of categories in ORGANIZATION_TYPE
     _, cat_cols = pp.get_feature_groups(bureau)
@@ -142,15 +142,18 @@ def bureau(nrows = None, silent = True, treat_cat_missing = False, treat_num_mis
     if not silent:
         print("Aggregating BUREAU by categories of 'SK_ID_CURR' and 'CREDIT_ACTIVE'...")
     numeric_cols = pp.get_dtype_columns(bureau, dtypes = [np.dtype(np.int64), np.dtype(np.float64)])
-    bureau_cat_num_agg = pp.agg_categorical_numeric(bureau, df_name = "BUREAU", 
-                                                    funcs = ['sum', 'mean', 'count'], group_var = ['SK_ID_CURR', 'CREDIT_ACTIVE'], 
+    bureau_cat_num_agg = pp.agg_categorical_numeric(bureau, df_name = "BE", 
+                                                    funcs = ['sum', 'mean'], group_var = ['SK_ID_CURR', 'CREDIT_ACTIVE'], 
                                                     target_numvar = numeric_cols)
 #    bureau = pp.convert_types(bureau, print_info = True)
 #    bureau_cat_num_agg = pp.convert_types(bureau_cat_num_agg, print_info = True)
 #
     if not silent:
         print("Aggregating BUREAU by only 'SK_ID_CURR'...")    
-    bureau_agg = pp.get_engineered_features(bureau.drop(['SK_ID_BUREAU'], axis=1), group_var = 'SK_ID_CURR', df_name = 'BB', num_agg_funcs = ['count', 'mean', 'median', 'sum'])
+    counts = pp.get_counts_features(bureau, group_var = 'SK_ID_CURR', count_var = 'SK_ID_BUREAU', df_name = 'BB')
+    bureau_agg = pp.get_engineered_features(bureau.drop(['SK_ID_BUREAU'], axis=1), group_var = 'SK_ID_CURR', df_name = 'BB', num_agg_funcs = ['mean', 'median', 'sum'])
+    
+    bureau_agg = counts.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
     
     duplicated_bureau_agg = pp.duplicate_columns(bureau_agg, verbose = not silent, progress = False)
     if not silent:

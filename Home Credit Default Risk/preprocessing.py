@@ -335,7 +335,12 @@ def kde_target(var_name, df):
     print('Median value for loan that was not repaid = %0.4f' % avg_not_repaid)
     print('Median value for loan that was repaid =     %0.4f' % avg_repaid)
 
-def get_engineered_features(df, group_var, df_name, num_agg_funcs = ['count', 'mean', 'max', 'min', 'sum', 'std', 'var'], cat_agg_funcs = ['sum', 'mean'], cols_alias = ['count', 'count_norm']):
+def get_counts_features(df, group_var, count_var, df_name):
+    counts = df.groupby(group_var)[count_var].agg('count')
+    counts.name = df_name + '_ROWCOUNT'
+    return (counts.reset_index())
+    
+def get_engineered_features(df, group_var, df_name, num_agg_funcs = ['mean', 'max', 'min', 'sum', 'std', 'var'], cat_agg_funcs = ['sum', 'mean'], cols_alias = ['count', 'count_norm']):
     numerical_agg = agg_numeric(df, group_var = group_var, df_name = df_name, agg_funcs = num_agg_funcs)
     if (any(df.dtypes == 'object') or any(df.dtypes == 'category')):
         categorical_agg = count_categorical(df, group_var = group_var, df_name = df_name, agg_funcs = cat_agg_funcs, cols_alias = cols_alias).reset_index()
@@ -485,7 +490,13 @@ def convert_types(df, print_info = False):
         
     return df
 
+
+
 def agg_categorical_numeric(df, df_name, group_var = ['SK_ID_CURR', 'CREDIT_ACTIVE'], funcs = ['sum', 'mean'], target_numvar = ['DAYS_CREDIT', 'AMT_ANNUITY']):
+    
+    #counts = pd.get_dummies(df.loc[:, group_var])
+    #counts = counts.groupby(group_var[0]).agg('sum')
+    #counts.columns = [c[c.find(group_var[1]+'_')+len(group_var[1]+'_'):].upper()+'_COUNT' for c in list(counts.columns)]
     
     df_1 = df.loc[:, group_var + target_numvar].groupby(group_var).agg(funcs)
     
