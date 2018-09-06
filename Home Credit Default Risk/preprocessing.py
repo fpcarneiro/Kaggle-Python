@@ -9,17 +9,29 @@ import matplotlib.pyplot as plt
 from sklearn.base import BaseEstimator, TransformerMixin
 
 DATADIR = "input/"
+SUBMISSIONS_DIR = "submissions/"
 
 def list_files(input_dir = "input/"):
     return (os.listdir(input_dir))
 
-def read_dataset_csv(input_dir = "input/", filename = "", nrows = None):
-    return (pd.read_csv(input_dir + filename, nrows = nrows))
+def read_dataset_csv(input_dir = "input/", filename = "", nrows = None, usecols = None):
+    return (pd.read_csv(input_dir + filename, nrows = nrows, usecols = usecols))
 
 def read_train_test(input_dir = "input/", train_file = 'train.csv', test_file = 'test.csv', nrows = None):
     train = pd.read_csv(input_dir + train_file, nrows = nrows)
     test = pd.read_csv(input_dir + test_file, nrows = nrows)
     return train, test
+
+def submit_file(test_id, test_pred, prefix_file_name = "submit", cv_score = None):
+    if cv_score != None:
+        file_name = "%s_%.6f.csv" % (prefix_file_name, cv_score)
+    else:
+        file_name = "%s.csv" % (prefix_file_name)
+    submit = pd.DataFrame()
+    submit['SK_ID_CURR'] = test_id
+    submit['TARGET'] = test_pred
+    submit[['SK_ID_CURR', 'TARGET']].to_csv(SUBMISSIONS_DIR + file_name, index= False)
+    return submit
 
 def get_memory_usage_mb(dataset):
     return (dataset.memory_usage().sum() / 1024 / 1024)
@@ -219,9 +231,9 @@ def agg_numeric(df, group_var, df_name, agg_funcs = ['count', 'mean', 'max', 'mi
         if col != group_var and 'SK_ID' in col:
             df = df.drop([col], axis = 1)
             
-    group_ids = df[group_var]
+    group_ids = df.loc[:, group_var].values
     numeric_df = df.select_dtypes(include = ['number'])
-    numeric_df[group_var] = group_ids
+    numeric_df.loc[:, group_var] = group_ids
 
     # Group by the specified variable and calculate the statistics
     agg = numeric_df.groupby(group_var).agg(agg_funcs).reset_index()

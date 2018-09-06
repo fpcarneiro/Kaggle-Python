@@ -106,7 +106,7 @@ def load_train_test(nrows = None, silent = True, treat_cat_missing = False, trea
     
     return train, test
 
-def bureau(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False):
+def bureau(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "B"):
     bureau = pp.read_dataset_csv(filename = "bureau.csv", nrows = nrows)
 
     if (treat_num_missing):
@@ -142,47 +142,181 @@ def bureau(nrows = None, silent = True, treat_cat_missing = False, treat_num_mis
     if not silent:
         print("Aggregating BUREAU by categories of 'SK_ID_CURR' and 'CREDIT_ACTIVE'...")
     numeric_cols = pp.get_dtype_columns(bureau, dtypes = [np.dtype(np.int64), np.dtype(np.float64)])
-    bureau_cat_num_agg = pp.agg_categorical_numeric(bureau, df_name = "BE", 
+    bureau_cat_num_agg = pp.agg_categorical_numeric(bureau, df_name = df_name + "1", 
                                                     funcs = ['sum', 'mean'], group_var = ['SK_ID_CURR', 'CREDIT_ACTIVE'], 
                                                     target_numvar = numeric_cols)
-#    bureau = pp.convert_types(bureau, print_info = True)
-#    bureau_cat_num_agg = pp.convert_types(bureau_cat_num_agg, print_info = True)
-#
+
     if not silent:
         print("Aggregating BUREAU by only 'SK_ID_CURR'...")    
-    counts = pp.get_counts_features(bureau, group_var = 'SK_ID_CURR', count_var = 'SK_ID_BUREAU', df_name = 'BB')
-    bureau_agg = pp.get_engineered_features(bureau.drop(['SK_ID_BUREAU'], axis=1), group_var = 'SK_ID_CURR', df_name = 'BB', num_agg_funcs = ['mean', 'median', 'sum'])
+    counts = pp.get_counts_features(bureau, group_var = 'SK_ID_CURR', count_var = 'SK_ID_BUREAU', df_name = df_name + '2')
+    bureau_agg = pp.get_engineered_features(bureau.drop(['SK_ID_BUREAU'], axis=1), group_var = 'SK_ID_CURR', df_name = df_name + '2', num_agg_funcs = ['mean', 'median', 'sum'])
     
     bureau_agg = counts.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
     
-    duplicated_bureau_agg = pp.duplicate_columns(bureau_agg, verbose = not silent, progress = False)
-    if not silent:
-        print("Removing duplicated columns {}".format(duplicated_bureau_agg))
-    if len(duplicated_bureau_agg) > 0:
-        bureau_agg.drop(list(duplicated_bureau_agg.keys()), axis=1, inplace = True)
-#        
-#    bureau_agg = pp.convert_types(bureau_agg, print_info = True)
-#    
-#    train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
-#    test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
-#    
-    duplicated_bureau_cat_num_agg = pp.duplicate_columns(bureau_cat_num_agg, verbose = not silent, progress = False)
-    if not silent:
-        print("Removing duplicated columns {}".format(duplicated_bureau_cat_num_agg))
-    if len(duplicated_bureau_cat_num_agg) > 0:
-        bureau_cat_num_agg.drop(list(duplicated_bureau_cat_num_agg.keys()), axis=1, inplace = True)
+    if remove_duplicated_cols:
+        duplicated_bureau_agg = pp.duplicate_columns(bureau_agg, verbose = not silent, progress = False)
+        if not silent:
+            print("Removing duplicated columns {}".format(duplicated_bureau_agg))
+        if len(duplicated_bureau_agg) > 0:
+            bureau_agg.drop(list(duplicated_bureau_agg.keys()), axis=1, inplace = True)
+
+    if remove_duplicated_cols:
+        duplicated_bureau_cat_num_agg = pp.duplicate_columns(bureau_cat_num_agg, verbose = not silent, progress = False)
+        if not silent:
+            print("Removing duplicated columns {}".format(duplicated_bureau_cat_num_agg))
+        if len(duplicated_bureau_cat_num_agg) > 0:
+            bureau_cat_num_agg.drop(list(duplicated_bureau_cat_num_agg.keys()), axis=1, inplace = True)
         
     return bureau_agg.merge(bureau_cat_num_agg, on = 'SK_ID_CURR', how = 'left')
-#    
-#    train = train.merge(bureau_cat_num_agg, on = 'SK_ID_CURR', how = 'left')
-#    test = test.merge(bureau_cat_num_agg, on = 'SK_ID_CURR', how = 'left')
-#    
-#    bureau_agg_id_columns = list(set([c for c in bureau_agg.columns if c.startswith("SK_ID_")] + [c for c in bureau_cat_num_agg.columns if c.startswith("SK_ID_")]))
-#    bureau_agg_columns = list(set([c for c in bureau_agg.columns if c not in bureau_agg_id_columns] + [c for c in bureau_cat_num_agg.columns if c not in bureau_agg_id_columns]))
-#    
-#    del bureau_agg, bureau_ct_table, bureau_cc_table, s_bureau_ct, s_bureau_cc, bureau_ca_table, s_bureau_ca
-#    del bureau_cat_num_agg, numeric_cols
-#    del duplicated_bureau_agg, duplicated_bureau_cat_num_agg
-#    gc.collect()
     
     #return bureau_cat_num_agg
+    
+def bureau_balance(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "BB"):
+    group_vars = ['SK_ID_BUREAU', 'SK_ID_CURR']
+    
+    bureau_balance = pp.read_dataset_csv(filename = "bureau_balance.csv", nrows = nrows)
+    bureau = pp.read_dataset_csv(filename = "bureau.csv", nrows = nrows, usecols= ['SK_ID_BUREAU', 'SK_ID_CURR'])
+    
+#    bureau_balance = pp.convert_types(bureau_balance, print_info = True)
+#    #bureau_balance_agg = pp.aggregate_client(bureau_balance, parent_df = bureau[group_vars], group_vars = group_vars, 
+#    #                                         df_names = ['bureau_balance', 'client'])
+#   
+    df_name_temp = '_'
+    bureau_balance_agg = pp.get_engineered_features(bureau_balance, group_var = 'SK_ID_BUREAU', df_name = df_name_temp, num_agg_funcs = ['count', 'min', 'max'], cat_agg_funcs = ['sum'], cols_alias = ['count'])
+    cols_status = [c for c in bureau_balance_agg.columns if c.endswith("_count") and c.find("_STATUS_") != -1 and c not in [df_name_temp + "_STATUS_X_count", df_name_temp + "_STATUS_C_count", df_name_temp + "_STATUS_0_count"]]
+    # DPD ==Days Past Due
+    bureau_balance_agg[df_name_temp + "_DPD_count"] = bureau_balance_agg.loc[:, cols_status].sum(axis=1)
+#    #bureau_balance_agg[df_name + "_DPD_PERCENT"] = bureau_balance_agg[df_name + "_DPD_COUNT"]/bureau_balance_agg[df_name + "_MONTHS_BALANCE_count"]
+#    #bureau_balance_agg[bureau_balance_agg.SK_ID_BUREAU.isin(bureau.SK_ID_BUREAU) == False]
+    bureau_balance_agg = bureau_balance_agg.merge(bureau[[group_vars[0], group_vars[1]]], on = group_vars[0], how = 'inner')
+    bureau_balance_agg = bureau_balance_agg.drop([group_vars[0]], axis=1)
+    bureau_balance_agg_by_client = pp.agg_numeric(bureau_balance_agg, group_var = group_vars[1], df_name = df_name, agg_funcs = ['mean', 'sum', 'median'])
+    
+    cols_status_percent = [c for c in bureau_balance_agg_by_client.columns if c.endswith("_count_sum") and c.find("_STATUS_") != -1] + [df_name + '_' + df_name_temp + "_DPD_count_sum"]
+    for c in cols_status_percent:
+        bureau_balance_agg_by_client[c + "_PERCENT"] = bureau_balance_agg_by_client[c]/bureau_balance_agg_by_client[df_name + '_' + df_name_temp + "_MONTHS_BALANCE_count_sum"]
+    
+    if remove_duplicated_cols:
+        duplicated_bureau_balance_agg_by_client = pp.duplicate_columns(bureau_balance_agg_by_client, verbose = not silent, progress = False)
+        if len(duplicated_bureau_balance_agg_by_client) > 0:
+            bureau_balance_agg_by_client.drop(list(duplicated_bureau_balance_agg_by_client.keys()), axis=1, inplace = True)
+            
+        #bureau_balance_agg_by_client = pp.convert_types(bureau_balance_agg_by_client, print_info = True)
+
+    return bureau_balance_agg_by_client
+
+
+def previous_application(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "PA"):
+    previous_application = pp.read_dataset_csv(filename = "previous_application.csv", nrows = nrows)
+    
+    if not silent:
+        print("Deleting columns with high occurance of nulls...")  
+    previous_application.drop(['RATE_INTEREST_PRIMARY', 'RATE_INTEREST_PRIVILEGED', 'DAYS_FIRST_DRAWING'], axis=1, inplace = True)
+    
+    #previous_application = pp.handle_missing_median(previous_application, pp.get_numerical_missing_cols(previous_application), group_by_cols = ["SK_ID_CURR"])
+    #print(pp.check_missing(previous_application[pp.get_numerical_missing_cols(previous_application)]))
+    
+    previous_application.loc[:, 'HOUR_APPR_PROCESS_START'] = previous_application.loc[:, 'HOUR_APPR_PROCESS_START'].astype('object')
+    
+    previous_application.NFLAG_INSURED_ON_APPROVAL.fillna(0, inplace= True)
+    previous_application.loc[:, 'NFLAG_INSURED_ON_APPROVAL'] = previous_application.loc[:, 'NFLAG_INSURED_ON_APPROVAL'].astype('int32')
+    
+    cat_cols2encode = ["NFLAG_INSURED_ON_APPROVAL", "FLAG_LAST_APPL_PER_CONTRACT", "NFLAG_LAST_APPL_IN_DAY"]
+    
+    le = LabelEncoder()
+    for col in cat_cols2encode:
+        le.fit(previous_application[col])
+        previous_application[col] = le.transform(previous_application[col])
+    
+    if not silent:
+        print("Previous Application samples: {}".format(previous_application.shape))
+    
+    # Decrease number of categories
+    _, cat_cols = pp.get_feature_groups(previous_application)
+    
+    if not silent:
+        print("Decreading the number of categories...")
+    
+    for col in cat_cols:
+        cat_values_table = pp.check_categorical_cols_values(previous_application, col = col)
+        s_low_values = set(cat_values_table[cat_values_table.loc[:, "% of Total"] < 1].index)
+        
+        if len(s_low_values) >= 2:
+            if not silent:
+                print("Decreasing the number of categories in {}...".format(col))
+                print("The following categories will be grouped: {}".format(s_low_values))
+            previous_application.loc[previous_application[col].isin(s_low_values), col] = "Other 2"
+
+    previous_application.PRODUCT_COMBINATION.fillna("Other 2", inplace= True)
+    
+    #previous_application['DAYS_FIRST_DRAWING_ANOM'] = previous_application["DAYS_FIRST_DRAWING"] == 365243
+    #previous_application['DAYS_FIRST_DRAWING'].replace(365243, np.nan, inplace= True)
+    
+    previous_application['DAYS_FIRST_DUE_ANOM'] = previous_application["DAYS_FIRST_DUE"] == 365243
+    previous_application['DAYS_FIRST_DUE'].replace(365243, np.nan, inplace= True)
+    
+    previous_application['DAYS_LAST_DUE_1ST_VERSION_ANOM'] = previous_application["DAYS_LAST_DUE_1ST_VERSION"] == 365243
+    previous_application['DAYS_LAST_DUE_1ST_VERSION'].replace(365243, np.nan, inplace= True)
+    
+    previous_application['DAYS_LAST_DUE_ANOM'] = previous_application["DAYS_LAST_DUE"] == 365243
+    previous_application['DAYS_LAST_DUE'].replace(365243, np.nan, inplace= True)
+    
+    previous_application['DAYS_TERMINATION_ANOM'] = previous_application["DAYS_TERMINATION"] == 365243
+    previous_application['DAYS_TERMINATION'].replace(365243, np.nan, inplace= True)
+    # Add feature: value ask / value received percentage
+#    
+#    #previous_application['APP_CREDIT_PERC'] = previous_application['AMT_APPLICATION'] / previous_application['AMT_CREDIT']
+
+    if (treat_num_missing):
+        if not silent:
+            print("Treating numericals missing...") 
+        previous_application = pp.handle_missing_median(previous_application, pp.get_numerical_missing_cols(previous_application), group_by_cols = ["NAME_CONTRACT_STATUS"])
+        print(pp.check_missing(previous_application[pp.get_numerical_missing_cols(previous_application)]))
+    
+    if not silent:
+        print("Aggregating PREVIOUS APPLICATION by categories of 'SK_ID_CURR' and 'NAME_CONTRACT_STATUS'...")
+    numeric_cols = pp.get_dtype_columns(previous_application, dtypes = [np.dtype(np.int64), np.dtype(np.float64)])
+    previous_application_cat_num_agg = pp.agg_categorical_numeric(previous_application, df_name = df_name + "1", 
+                                                    funcs = ['sum', 'mean'], group_var = ['SK_ID_CURR', 'NAME_CONTRACT_STATUS'], 
+                                                    target_numvar = numeric_cols)
+    if not silent:
+        print("Aggregating PREVIOUS APPLICATION by only 'SK_ID_CURR'...")        
+    #previous_application_agg = pp.get_engineered_features(previous_application.drop(['SK_ID_PREV'], axis=1), group_var = 'SK_ID_CURR', df_name = 'previous', num_agg_funcs = ['count', 'mean', 'median', 'sum'])
+    counts = pp.get_counts_features(previous_application, group_var = 'SK_ID_CURR', count_var = 'SK_ID_PREV', df_name = df_name + '2')
+    previous_application_agg = pp.get_engineered_features(previous_application.drop(['SK_ID_PREV'], axis=1), group_var = 'SK_ID_CURR', df_name = df_name + '2', num_agg_funcs = ['mean', 'median', 'sum'])
+    
+    previous_application_agg = counts.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
+    
+    if remove_duplicated_cols:
+        duplicated_previous_application_agg = pp.duplicate_columns(previous_application_agg, verbose = not silent, progress = False)
+        if not silent:
+            print("Removing duplicated columns {}".format(duplicated_previous_application_agg))
+        if len(duplicated_previous_application_agg) > 0:
+            previous_application_agg.drop(list(duplicated_previous_application_agg.keys()), axis=1, inplace = True)
+    
+    if remove_duplicated_cols:
+        duplicated_previous_application_cat_num_agg = pp.duplicate_columns(previous_application_cat_num_agg, verbose = not silent, progress = False)
+        if not silent:
+            print("Removing duplicated columns {}".format(duplicated_previous_application_cat_num_agg))
+        if len(duplicated_previous_application_cat_num_agg) > 0:
+            previous_application_cat_num_agg.drop(list(duplicated_previous_application_cat_num_agg.keys()), axis=1, inplace = True)
+#        
+#    previous_application_agg_id_columns = list(set([c for c in previous_application_agg.columns if c.startswith("SK_ID_")] + [c for c in previous_application_cat_num_agg.columns if c.startswith("SK_ID_")]))
+#    previous_application_agg_columns = list(set([c for c in previous_application_agg.columns if c not in previous_application_agg_id_columns] + [c for c in previous_application_cat_num_agg.columns if c not in previous_application_agg_id_columns]))
+#    
+#    previous_application_agg = pp.convert_types(previous_application_agg, print_info = True)
+#    previous_application_cat_num_agg = pp.convert_types(previous_application_cat_num_agg, print_info = True)
+#    
+#    train = train.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
+#    test = test.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
+#    
+#    train = train.merge(previous_application_cat_num_agg, on = 'SK_ID_CURR', how = 'left')
+#    test = test.merge(previous_application_cat_num_agg, on = 'SK_ID_CURR', how = 'left')
+#    
+#    gc.enable()
+#    del previous_application, previous_application_agg
+#    del previous_application_nclp_table, s_previous_application, previous_application_npt_table, previous_application_crr_table, previous_application_nts_table, previous_application_ngc_table, 
+#    del previous_application_ct_table, previous_application_nsi_table, previous_application_pc_table, cat_cols2encode, numeric_cols
+#    del previous_application_cat_num_agg, duplicated_previous_application_agg, duplicated_previous_application_cat_num_agg
+#    gc.collect()
+    return previous_application_agg.merge(previous_application_cat_num_agg, on = 'SK_ID_CURR', how = 'left')   

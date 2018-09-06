@@ -256,6 +256,9 @@ def installments_payments(num_rows = None, nan_as_category = True):
     ins['DBD'] = ins['DAYS_INSTALMENT'] - ins['DAYS_ENTRY_PAYMENT']
     ins['DPD'] = ins['DPD'].apply(lambda x: x if x > 0 else 0)
     ins['DBD'] = ins['DBD'].apply(lambda x: x if x > 0 else 0)
+    
+    ins.loc[ins.DAYS_ENTRY_PAYMENT >= -365, 'LATE_PAYMENT'] = ins.loc[ins.DAYS_ENTRY_PAYMENT >= -365, 'DAYS_ENTRY_PAYMENT'] - ins.loc[ins.DAYS_ENTRY_PAYMENT >= -365, 'DAYS_INSTALMENT']
+    
     # Features: Perform aggregations
     aggregations = {
         'NUM_INSTALMENT_VERSION': ['nunique'],
@@ -263,6 +266,7 @@ def installments_payments(num_rows = None, nan_as_category = True):
         'DBD': ['max', 'mean', 'sum'],
         'PAYMENT_PERC': ['max', 'mean', 'sum', 'var'],
         'PAYMENT_DIFF': ['max', 'mean', 'sum', 'var'],
+        'LATE_PAYMENT': ['max', 'mean', 'sum', 'var'],
         'AMT_INSTALMENT': ['max', 'mean', 'sum'],
         'AMT_PAYMENT': ['min', 'max', 'mean', 'sum'],
         'DAYS_ENTRY_PAYMENT': ['max', 'mean', 'sum']
@@ -273,6 +277,9 @@ def installments_payments(num_rows = None, nan_as_category = True):
     ins_agg.columns = pd.Index(['INSTAL_' + e[0] + "_" + e[1].upper() for e in ins_agg.columns.tolist()])
     # Count installments accounts
     ins_agg['INSTAL_COUNT'] = ins.groupby('SK_ID_CURR').size()
+    
+    
+    
     del ins
     gc.collect()
     return ins_agg
@@ -406,10 +413,12 @@ def kfold_xgb(df, num_folds, stratified = False, debug= False):
         print('Fold %2d AUC : %.6f' % (n_fold + 1, roc_auc_score(valid_y, oof_preds[valid_idx])))
         del clf, train_x, train_y, valid_x, valid_y
         gc.collect()
-
-    print('Full AUC score %.6f' % roc_auc_score(train_df['TARGET'], oof_preds))
+    
+    auc_score = roc_auc_score(train_df['TARGET'], oof_preds)
+    print('Full AUC score %.6f' % auc_score)
     # Write submission file and plot feature importance
     if not debug:
+        file_name = 
         test_df['TARGET'] = sub_preds
         test_df[['SK_ID_CURR', 'TARGET']].to_csv(submission_file_name, index= False)
     display_importances(feature_importance_df)
@@ -460,35 +469,37 @@ def main(debug = False):
         del cc
         gc.collect()
     with timer("Run LightGBM with kfold"):
-        #duplicated = pp.duplicate_columns(df, verbose = True, progress = False)
-        #if len(duplicated) > 0:
-        #    df.drop(list(duplicated.keys()), axis=1, inplace = True)
-        cl = LGBMClassifier(boosting_type='gbdt', n_estimators=1500, objective = 'binary', 
-                                   learning_rate = 0.05, silent = False,
-                                   subsample = 0.8, colsample_bytree = 0.5)
+#        #duplicated = pp.duplicate_columns(df, verbose = True, progress = False)
+#        #if len(duplicated) > 0:
+#        #    df.drop(list(duplicated.keys()), axis=1, inplace = True)
+#        cl = LGBMClassifier(boosting_type='gbdt', n_estimators=1500, objective = 'binary', 
+#                                   learning_rate = 0.05, silent = False,
+#                                   subsample = 0.8, colsample_bytree = 0.5)
+#        
+#        feats = [f for f in df.columns if f not in ['TARGET','SK_ID_CURR','SK_ID_BUREAU','SK_ID_PREV','index']]
+#        
+#        train_df = df[df['TARGET'].notnull()]
+#        train_y = train_df['TARGET']
+#        train_X = train_df[feats]
+#        cl.fit(train_X, train_y)
+#        
+#        importances = pd.DataFrame({"Feature Importance":cl.feature_importances_}, index=train_X.columns)
+#        importances.sort_values("Feature Importance", ascending=False, inplace = True)
+#        importances[importances["Feature Importance"]!=0].sort_values("Feature Importance")
+#        
+#        print(importances)
+#        features = importances[importances["Feature Importance"]!=0].sort_values("Feature Importance")
+#        threshold = np.median(features["Feature Importance"])
+#        print("Eliminating features with importance lower than {}".format(threshold))
+#        features = importances[importances["Feature Importance"]>=threshold].sort_values("Feature Importance")
+#        print(list(features.index))
         
-        feats = [f for f in df.columns if f not in ['TARGET','SK_ID_CURR','SK_ID_BUREAU','SK_ID_PREV','index']]
-        
-        train_df = df[df['TARGET'].notnull()]
-        train_y = train_df['TARGET']
-        train_X = train_df[feats]
-        cl.fit(train_X, train_y)
-        
-        importances = pd.DataFrame({"Feature Importance":cl.feature_importance()}, index=train_X.columns)
-        importances.sort_values("Feature Importance", ascending=False, inplace = True)
-        importances[importances["Feature Importance"]!=0].sort_values("Feature Importance")
-        
-        print(importances)
-        threshold = np.mean(importances["Feature Importance"])
-        print("Eliminating features with importance lower than {}".format(threshold))
-        features = importances[importances["Feature Importance"]>=threshold].sort_values("Feature Importance")
-        print(list(features.index))
-        
-        feat_importance_lgb = kfold_lightgbm(df[list(features.index) + ['TARGET','SK_ID_CURR','index']], num_folds= 5, stratified= False, debug= debug)
+        #feat_importance_lgb = kfold_lightgbm(df[list(features.index) + ['TARGET','SK_ID_CURR','index']], num_folds= 5, stratified= False, debug= debug)
+        feat_importance_lgb = kfold_lightgbm(df, num_folds= 5, stratified= False, debug= debug)
         #feat_importance_xgb = kfold_xgb(df, num_folds= 5, stratified= False, debug= debug)
     return feat_importance_lgb
 
 if __name__ == "__main__":
-    submission_file_name = "submission_kernel03.csv"
+    submission_file_name = "submission_kernel04.csv"
     with timer("Full model run"):
         feat_importance = main(debug = True)

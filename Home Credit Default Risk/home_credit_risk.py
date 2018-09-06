@@ -25,14 +25,19 @@ import feature_selection as fs
 
 import load as ld
 
+from training import kfold_lightgbm, kfold_xgb, timer, display_importances
+
+from sklearn.preprocessing import Imputer
+
+
 plt.style.use('fivethirtyeight')
 
-train, test = ld.load_train_test(nrows = None, silent = True)
+train, test = ld.load_train_test(nrows = 10000, silent = True)
 
 train.to_csv("input/train_engineered_1.csv", compression="zip")
 test.to_csv("input/test_engineered_1.csv", compression="zip")
 
-bureau_agg = ld.bureau(nrows = None, silent = True)
+bureau_agg = ld.bureau(nrows = None, silent = False)
 
 train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
 test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
@@ -43,47 +48,12 @@ gc.collect()
 train.to_csv("input/train_engineered_2.csv", compression="zip")
 test.to_csv("input/test_engineered_2.csv", compression="zip")
 
-group_vars = ['SK_ID_BUREAU', 'SK_ID_CURR']
-bureau_balance = pp.read_dataset_csv(filename = "bureau_balance.csv")
-bureau_balance = pp.convert_types(bureau_balance, print_info = True)
-#bureau_balance_agg = pp.aggregate_client(bureau_balance, parent_df = bureau[group_vars], group_vars = group_vars, 
-#                                         df_names = ['bureau_balance', 'client'])
-
-bureau_balance_agg = pp.get_engineered_features(bureau_balance, group_var = 'SK_ID_BUREAU', df_name = "bureau_balance", num_agg_funcs = ['count', 'min', 'max'], cat_agg_funcs = ['sum'], cols_alias = ['count'])
-cols_status = [c for c in bureau_balance_agg.columns if c.endswith("_count") and c.find("_STATUS_") != -1 and c not in ["bureau_balance_STATUS_X_count", "bureau_balance_STATUS_C_count", "bureau_balance_STATUS_0_count"]]
-# DPD ==Days Past Due
-bureau_balance_agg["bureau_balance_DPD_count"] = bureau_balance_agg.loc[:, cols_status].sum(axis=1)
-#bureau_balance_agg["bureau_balance_DPD_PERCENT"] = bureau_balance_agg["DPD_COUNT"]/bureau_balance_agg["bureau_balance_MONTHS_BALANCE_count"]
-#bureau_balance_agg[bureau_balance_agg.SK_ID_BUREAU.isin(bureau.SK_ID_BUREAU) == False]
-bureau_balance_agg = bureau_balance_agg.merge(bureau[[group_vars[0], group_vars[1]]], on = group_vars[0], how = 'inner')
-bureau_balance_agg = bureau_balance_agg.drop([group_vars[0]], axis=1)
-bureau_balance_agg_by_client = pp.agg_numeric(bureau_balance_agg, group_var = group_vars[1], df_name = 'CLIENT')
-
-cols_status_percent = [c for c in bureau_balance_agg_by_client.columns if c.endswith("_count_sum") and c.find("_STATUS_") != -1] + ["CLIENT_bureau_balance_DPD_count_sum"]
-for c in cols_status_percent:
-    bureau_balance_agg_by_client[c + "_PERCENT"] = bureau_balance_agg_by_client[c]/bureau_balance_agg_by_client["CLIENT_bureau_balance_MONTHS_BALANCE_count_sum"]
-
-duplicated_bureau_balance_agg_by_client = pp.duplicate_columns(bureau_balance_agg_by_client, verbose = True, progress = False)
-if len(duplicated_bureau_balance_agg_by_client) > 0:
-    bureau_balance_agg_by_client.drop(list(duplicated_bureau_balance_agg_by_client.keys()), axis=1, inplace = True)
-    
-bureau_balance_agg_by_client = pp.convert_types(bureau_balance_agg_by_client, print_info = True)
-
-train = train.merge(bureau_balance_agg_by_client, on = 'SK_ID_CURR', how = 'left')
-test = test.merge(bureau_balance_agg_by_client, on = 'SK_ID_CURR', how = 'left')
-
-bureau_balance_agg_id_columns = [c for c in bureau_balance_agg_by_client.columns if c.startswith("SK_ID_")]
-bureau_balance_agg_columns = [c for c in bureau_balance_agg_by_client.columns if c not in bureau_balance_agg_id_columns]
-
-gc.enable()
-del bureau, bureau_balance, bureau_balance_agg, group_vars
-del cols_status, bureau_balance_agg_by_client
-del cols_status_percent
-del c, duplicated_bureau_balance_agg_by_client
-gc.collect()
+bureau_balance_agg = ld.bureau_balance(nrows = 10000, silent = False)
 
 train.to_csv("input/train_engineered_3.csv", compression="zip")
 test.to_csv("input/test_engineered_3.csv", compression="zip")
+
+previous_application_agg = ld.previous_application(nrows = None, silent = False, remove_duplicated_cols = True)
 
 previous_application = pp.read_dataset_csv(filename = "previous_application.csv")
 
@@ -334,7 +304,12 @@ my_submission = pd.DataFrame({'SK_ID_CURR': ids, 'TARGET': pred})
 my_submission.to_csv("xgb_dmatrix.csv", index=False)
 
 # LIGHT GBM
+
+feat_importance_lgb = kfold_lightgbm(train_X_reduced, train_y, test_X_reduced, num_folds= 5, stratified= False, debug= False)
+
 lgb_train = lgb.Dataset(train_X_reduced, label=train_y, feature_name = features_select_from_model)
+lgb_train = lgb.Dataset(train_X_reduced, label=train_y.values, feature_name = list(train_X_reduced.columns))
+
 #lgb_test = lgb.Dataset(test_X_reduced)
 
 lgb_params = {}
@@ -405,97 +380,133 @@ def go_cv(trainset_X, trainset_y):
                                        folds = 3, repetitions = 1, seed = seed, train_score = False)
     return results
 
-def submit(model, ids, testset_X, filename = 'submission.csv'):
-    predicted = model.predict_proba(testset_X)[:, 1]
-    my_submission = pd.DataFrame({'SK_ID_CURR': ids, 'TARGET': predicted})
-    my_submission.to_csv(filename, index=False)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+debug_size = 0
+
+def process_files(debug_size = 0, treat_duplicated = False, select_features_model = False):
+    num_rows = debug_size if debug_size != 0 else None
+    with timer("Process application_train and application_test"):
+        train, test = ld.load_train_test(nrows = num_rows, silent = True)
+    with timer("Process Bureau"):
+        bureau_agg = ld.bureau(nrows = None, silent = False)
+        print("Bureau df shape:", bureau_agg.shape)
+        train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
+        test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
+        del bureau_agg
+        gc.collect()
+    with timer("Process Bureau Balance"):
+        bureau_balance_agg = ld.bureau_balance(nrows = None, silent = False, remove_duplicated_cols = True)
+        print("Bureau Balance df shape:", bureau_balance_agg.shape)
+        train = train.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
+        test = test.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
+        del bureau_balance_agg
+        gc.collect()
+    with timer("Process previous_applications"):
+        previous_application_agg = ld.previous_application(nrows = None, silent = False, remove_duplicated_cols = True)
+        print("Previous applications df shape:", previous_application_agg.shape)
+        train = train.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
+        test = test.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
+        del previous_application_agg
+        gc.collect()
+#    with timer("Process POS-CASH balance"):
+#        pos = pos_cash(num_rows)
+#        print("Pos-cash balance df shape:", pos.shape)
+#        df = df.join(pos, how='left', on='SK_ID_CURR')
+#        del pos
+#        gc.collect()
+#    with timer("Process installments payments"):
+#        ins = installments_payments(num_rows)
+#        print("Installments payments df shape:", ins.shape)
+#        df = df.join(ins, how='left', on='SK_ID_CURR')
+#        del ins
+#        gc.collect()
+#    with timer("Process credit card balance"):
+#        cc = credit_card_balance(num_rows)
+#        print("Credit card balance df shape:", cc.shape)
+#        df = df.join(cc, how='left', on='SK_ID_CURR')
+#        del cc
+#        gc.collect()
     
+    train = pp.convert_types(train, print_info = True)
+    test = pp.convert_types(test, print_info = True)
     
-train_cv = go_cv(train_X, train_y)
+    train_y = train['TARGET']
+    train_X = train.drop(['SK_ID_CURR', 'TARGET'], axis=1)
 
-model_xgb.fit(xgtrain)
+    ids = test['SK_ID_CURR']
+    test_X = test.drop(['SK_ID_CURR'], axis=1)
+    if select_features_model:
+        with timer("Selecting features with model..."): 
+            original_num_columns = len(train_X.columns)
+            model = lgb.LGBMClassifier(boosting_type='gbdt', n_estimators=1500, objective = 'binary', learning_rate = 0.05, silent = False, subsample = 0.8, colsample_bytree = 0.5)
+            pipeline = Pipeline([
+                     ('imputer', Imputer(strategy='mean', axis=0, verbose=0)),
+                     ('scaler', MinMaxScaler(feature_range = (0, 1))),
+                     ('reduce_dim', SelectFromModel(model, threshold = "median")),
+                     ])
+    
+            pipeline.fit(train_X, train_y)
 
-submit(model_xgb, ids, test_X, filename = 'submission_xgb.csv')
+            features_select_from_model = list(train_X.loc[:, pipeline.named_steps['reduce_dim'].get_support()].columns)
+            print("Models will be trained with {} of {} features.".format(len(features_select_from_model), original_num_columns))
 
+            #train = pipeline.transform(train_X)
+            #test = pipeline.transform(test_X)
+            train_X = train_X.loc[:, list(features_select_from_model)]
+            test_X = test_X.loc[:, list(features_select_from_model)]
+            
+    if treat_duplicated:
+        with timer("Treating duplicated"):
+            duplicated = pp.duplicate_columns(train, verbose = True, progress = False)
+            if len(duplicated) > 0:
+                train.drop(list(duplicated.keys()), axis=1, inplace = True)
+                test.drop(list(duplicated.keys()), axis=1, inplace = True)
+    return train_X, test_X, train_y, ids
 
-
-#dtrain = xgb.DMatrix(train[featureNames].values, label=train['target'].values)
-
-
-params = {
-         'gamma' : 0.027, 
-         'learning_rate' : 0.03,
-         'max_depth' : 4,
-         'min_child_weight' : 1.7817,
-         'n_estimators' : 1500,
-         'reg_alpha' : 0.43,
-         'reg_lambda' : 0.88,
-         'subsample' : 0.5213,
-         'silent' : 1,
-         'n_jobs' : 1,
-         'objective':'binary:logistic', 
-         'eval_metric': 'auc'}
-
-clf = xgb.train(params, xgtrain, 2000)
-
-pred = clf.predict(xgtest)
-my_submission = pd.DataFrame({'SK_ID_CURR': ids, 'TARGET': pred})
-my_submission.to_csv("xgb_dmatrix.csv", index=False)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-lgb.LGBMClassifier()
-
-
-
-# GRID SEARCH
-from sklearn.model_selection import RandomizedSearchCV
-from scipy.stats import randint, uniform
-from xgboost import XGBClassifier
-
-xgb_params_fixed = {"objective" : "binary:logistic", "silent" : False}
-
-xgb_params_distribution = {"max_depth" : [1,3,5],
-                      "n_estimators" : [100],
-                      "learning_rate": uniform(),
-                      "subsample": [0.5],
-                      "colsample_bytree" : [0.5]}
-
-lgb_params_fixed = {"objective" : "binary", "silent" : False}
-
-lgb_params_distribution = {"max_depth" : [3,5],
-                      "n_estimators" : randint(400, 1000),
-                      "learning_rate": [0.0596],
-                      "subsample": [0.7379],
-                      "colsample_bytree" : [0.438]}
-
-lgb_grid = RandomizedSearchCV(estimator = lgb.LGBMClassifier(**lgb_params_fixed, seed = 123), param_distributions=lgb_params_distribution, n_iter = 5, cv = 3, scoring = "roc_auc", random_state = 123)
-lgb_grid.fit(train_X_reduced, train_y)
-
-
-colsample_bytree=0.4385722446796244, learning_rate=0.05967789660956835, max_depth=3, n_estimators=408, subsample=0.7379954057320357, score=0.7781033030827368, total= 1.2min
+if __name__ == "__main__":
+    with timer("Full model run"):
+        train_X, test_X, train_y, ids = process_files(debug_size = debug_size, treat_duplicated = False, select_features_model = True)
+        
+        features_variance = fs.list_features_low_variance(train_X.fillna(0), train_y, .95)
+        train_X = train_X[features_variance]
+        test_X = test_X[features_variance]
+        with timer("Run LightGBM with kfold"):
+            lgb_cv_score, lgb_pred, feat_importance_lgb = kfold_lightgbm(train_X, train_y, test_X, num_folds= 5, stratified= False)
+            display_importances(feat_importance_lgb)
+            submit_lgb = pp.submit_file(ids, lgb_pred, prefix_file_name = "lightgbm", cv_score = lgb_cv_score)
+        #with timer("Run XGB with kfold"):
+            #xgb_cv_score, xgb_pred, feat_importance_xgb = kfold_xgb(train_X, train_y, test_X, num_folds= 5, stratified= False)
+            #display_importances(feat_importance_xgb)
+            #submit_xgb = pp.submit_file(ids, lgb_pred, prefix_file_name = "xgb", cv_score = xgb_cv_score)
+    del test_X, train_X, train_y
+    del features_variance
+    gc.collect()
