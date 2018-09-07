@@ -106,9 +106,12 @@ def load_train_test(nrows = None, silent = True, treat_cat_missing = False, trea
     
     return train, test
 
-def bureau(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "B"):
+def bureau(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "B", ids2filter = None):
     bureau = pp.read_dataset_csv(filename = "bureau.csv", nrows = nrows)
-
+    
+    if (ids2filter != None):
+        bureau = bureau.loc[bureau.SK_ID_CURR.isin(ids2filter)]
+    
     if (treat_num_missing):
         if not silent:
             print("Treating numericals missing...")
@@ -171,11 +174,15 @@ def bureau(nrows = None, silent = True, treat_cat_missing = False, treat_num_mis
     
     #return bureau_cat_num_agg
     
-def bureau_balance(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "BB"):
+def bureau_balance(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "BB", ids2filter = None):
     group_vars = ['SK_ID_BUREAU', 'SK_ID_CURR']
     
     bureau_balance = pp.read_dataset_csv(filename = "bureau_balance.csv", nrows = nrows)
-    bureau = pp.read_dataset_csv(filename = "bureau.csv", nrows = nrows, usecols= ['SK_ID_BUREAU', 'SK_ID_CURR'])
+    bureau = pp.read_dataset_csv(filename = "bureau.csv", nrows = nrows, usecols = group_vars)
+    
+    if (ids2filter != None):
+        bureau = bureau.loc[bureau.SK_ID_CURR.isin(ids2filter)]
+        #bureau_balance = bureau_balance.loc[bureau_balance.SK_ID_CURR.isin(ids2filter)]
     
 #    bureau_balance = pp.convert_types(bureau_balance, print_info = True)
 #    #bureau_balance_agg = pp.aggregate_client(bureau_balance, parent_df = bureau[group_vars], group_vars = group_vars, 
@@ -206,8 +213,11 @@ def bureau_balance(nrows = None, silent = True, treat_cat_missing = False, treat
     return bureau_balance_agg_by_client
 
 
-def previous_application(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "PA"):
+def previous_application(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "PA", ids2filter = None):
     previous_application = pp.read_dataset_csv(filename = "previous_application.csv", nrows = nrows)
+    
+    if (ids2filter != None):
+        previous_application = previous_application.loc[previous_application.SK_ID_CURR.isin(ids2filter)]
     
     if not silent:
         print("Deleting columns with high occurance of nulls...")  
@@ -319,4 +329,85 @@ def previous_application(nrows = None, silent = True, treat_cat_missing = False,
 #    del previous_application_ct_table, previous_application_nsi_table, previous_application_pc_table, cat_cols2encode, numeric_cols
 #    del previous_application_cat_num_agg, duplicated_previous_application_agg, duplicated_previous_application_cat_num_agg
 #    gc.collect()
-    return previous_application_agg.merge(previous_application_cat_num_agg, on = 'SK_ID_CURR', how = 'left')   
+    return previous_application_agg.merge(previous_application_cat_num_agg, on = 'SK_ID_CURR', how = 'left')
+
+def pos_cash(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "CA", ids2filter = None):
+    group_vars = ['SK_ID_PREV', 'SK_ID_CURR']
+    cash = pp.read_dataset_csv(filename = "POS_CASH_balance.csv", nrows = nrows)
+    
+    if (ids2filter != None):
+        cash = cash.loc[cash.SK_ID_CURR.isin(ids2filter)]
+    
+    if not silent:
+        print("Cash Balance samples: {}".format(cash.shape))
+    
+    # Decrease number of categories
+    _, cat_cols = pp.get_feature_groups(cash)
+    
+    if not silent:
+        print("Decreading the number of categories...")
+    
+    for col in cat_cols:
+        cat_values_table = pp.check_categorical_cols_values(cash, col = col)
+        s_low_values = set(cat_values_table[cat_values_table.loc[:, "% of Total"] < 1].index)
+        
+        if len(s_low_values) >= 2:
+            if not silent:
+                print("Decreasing the number of categories in {}...".format(col))
+                print("The following categories will be grouped: {}".format(s_low_values))
+            cash.loc[cash[col].isin(s_low_values), col] = "Other 2"
+    
+    #cash = pp.convert_types(cash, print_info=True)
+    
+    if not silent:
+        print("Aggregating POS_CASH by categories of 'SK_ID_CURR' and 'NAME_CONTRACT_STATUS'...")
+    numeric_cols = pp.get_dtype_columns(cash, dtypes = [np.dtype(np.int64), np.dtype(np.float64)])
+    cash_cat_num_agg = pp.agg_categorical_numeric(cash, df_name = df_name + "1", 
+                                                    funcs = ['sum', 'mean'], group_var = ['SK_ID_CURR', 'NAME_CONTRACT_STATUS'], 
+                                                    target_numvar = numeric_cols)
+    
+    if not silent:
+        print("Aggregating POS_CASH by only 'SK_ID_CURR'...")    
+    counts = pp.get_counts_features(cash, group_var = 'SK_ID_CURR', count_var = 'SK_ID_PREV', df_name = df_name + '2')
+    cash_agg = pp.get_engineered_features(cash.drop(['SK_ID_PREV'], axis=1), group_var = 'SK_ID_CURR', df_name = df_name + '2', num_agg_funcs = ['mean', 'median', 'sum'])
+    
+    cash_agg = counts.merge(cash_agg, on = 'SK_ID_CURR', how = 'left')
+    
+    if remove_duplicated_cols:
+        duplicated_cash_agg = pp.duplicate_columns(cash_agg, verbose = not silent, progress = False)
+        if not silent:
+            print("Removing duplicated columns {}".format(duplicated_cash_agg))
+        if len(duplicated_cash_agg) > 0:
+            cash_agg.drop(list(duplicated_cash_agg.keys()), axis=1, inplace = True)
+
+    if remove_duplicated_cols:
+        duplicated_cash_cat_num_agg = pp.duplicate_columns(cash_cat_num_agg, verbose = not silent, progress = False)
+        if not silent:
+            print("Removing duplicated columns {}".format(duplicated_cash_cat_num_agg))
+        if len(duplicated_cash_cat_num_agg) > 0:
+            cash_cat_num_agg.drop(list(duplicated_cash_cat_num_agg.keys()), axis=1, inplace = True)
+        
+    return cash_agg.merge(cash_cat_num_agg, on = 'SK_ID_CURR', how = 'left')
+    
+#    df_name_temp = '_'
+#    cash_agg = pp.get_engineered_features(cash, group_var = 'SK_ID_PREV', df_name = df_name_temp, num_agg_funcs = ['count', 'min', 'max'], cat_agg_funcs = ['sum'], cols_alias = ['count'])
+#    
+#    cash_agg = cash_agg.merge(cash[[group_vars[0], group_vars[1]]], on = group_vars[0], how = 'inner')
+#    cash_agg = cash_agg.drop([group_vars[0]], axis=1)
+#    #cash_agg_by_client = pp.agg_numeric(cash_agg, group_var = group_vars[1], df_name = df_name, agg_funcs = ['count', 'mean', 'median', 'sum'])
+#
+#    cash_agg_by_client = pp.agg_numeric(cash_agg, group_var = group_vars[1], df_name = df_name, agg_funcs = ['mean', 'sum', 'median'])
+#    
+##    #cash_agg = pp.aggregate_client_2(cash, group_vars = group_vars, df_names = ['cash', 'client'])
+##    
+##    cash_agg = pp.convert_types(cash_agg, print_info = True)
+##    cash_agg_by_client = pp.convert_types(cash_agg_by_client, print_info = True)
+##    
+##    duplicated_cash_agg_by_client = pp.duplicate_columns(cash_agg_by_client, verbose = True, progress = False)
+##    if len(duplicated_cash_agg_by_client) > 0:
+##        cash_agg_by_client.drop(list(duplicated_cash_agg_by_client.keys()), axis=1, inplace = True)
+##        
+##    train = train.merge(cash_agg_by_client, on = 'SK_ID_CURR', how = 'left')
+##    test = test.merge(cash_agg_by_client, on = 'SK_ID_CURR', how = 'left')
+##    return cash_agg
+    

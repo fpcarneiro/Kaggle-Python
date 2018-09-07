@@ -416,33 +416,36 @@ def process_files(debug_size = 0, treat_duplicated = False, select_features_mode
     num_rows = debug_size if debug_size != 0 else None
     with timer("Process application_train and application_test"):
         train, test = ld.load_train_test(nrows = num_rows, silent = True)
+        if num_rows != 0:
+            ids2filter = list(train.SK_ID_CURR) + list(test.SK_ID_CURR) if debug_size != 0 else None
     with timer("Process Bureau"):
-        bureau_agg = ld.bureau(nrows = None, silent = False)
+        bureau_agg = ld.bureau(nrows = None, silent = False, ids2filter = ids2filter)
         print("Bureau df shape:", bureau_agg.shape)
         train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
         test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
         del bureau_agg
         gc.collect()
     with timer("Process Bureau Balance"):
-        bureau_balance_agg = ld.bureau_balance(nrows = None, silent = False, remove_duplicated_cols = True)
+        bureau_balance_agg = ld.bureau_balance(nrows = None, silent = False, remove_duplicated_cols = True, ids2filter = ids2filter)
         print("Bureau Balance df shape:", bureau_balance_agg.shape)
         train = train.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
         test = test.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
         del bureau_balance_agg
         gc.collect()
     with timer("Process previous_applications"):
-        previous_application_agg = ld.previous_application(nrows = None, silent = False, remove_duplicated_cols = True)
+        previous_application_agg = ld.previous_application(nrows = None, silent = False, remove_duplicated_cols = True, ids2filter = ids2filter)
         print("Previous applications df shape:", previous_application_agg.shape)
         train = train.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
         test = test.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
         del previous_application_agg
         gc.collect()
-#    with timer("Process POS-CASH balance"):
-#        pos = pos_cash(num_rows)
-#        print("Pos-cash balance df shape:", pos.shape)
-#        df = df.join(pos, how='left', on='SK_ID_CURR')
-#        del pos
-#        gc.collect()
+    with timer("Process POS-CASH balance"):
+        pos_agg = ld.pos_cash(nrows = None, silent = False, remove_duplicated_cols = False, ids2filter = ids2filter)
+        print("Previous POS-CASH balance df shape:", pos_agg.shape)
+        train = train.merge(pos_agg, on = 'SK_ID_CURR', how = 'left')
+        test = test.merge(pos_agg, on = 'SK_ID_CURR', how = 'left')
+        del pos_agg
+        gc.collect()
 #    with timer("Process installments payments"):
 #        ins = installments_payments(num_rows)
 #        print("Installments payments df shape:", ins.shape)
@@ -509,4 +512,5 @@ if __name__ == "__main__":
             #submit_xgb = pp.submit_file(ids, lgb_pred, prefix_file_name = "xgb", cv_score = xgb_cv_score)
     del test_X, train_X, train_y
     del features_variance
+    del feat_importance_lgb, ids, lgb_cv_score, lgb_pred, submit_lgb
     gc.collect()
