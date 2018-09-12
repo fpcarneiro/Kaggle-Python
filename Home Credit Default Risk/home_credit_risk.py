@@ -416,36 +416,33 @@ def process_files(debug_size = 0, treat_duplicated = False, select_features_mode
     num_rows = debug_size if debug_size != 0 else None
     with timer("Process application_train and application_test"):
         train, test = ld.load_train_test(nrows = num_rows, silent = True)
-        if num_rows != 0:
-            ids2filter = list(train.SK_ID_CURR) + list(test.SK_ID_CURR) if debug_size != 0 else None
     with timer("Process Bureau"):
-        bureau_agg = ld.bureau(nrows = None, silent = False, ids2filter = ids2filter)
+        bureau_agg = ld.bureau(nrows = None, silent = False)
         print("Bureau df shape:", bureau_agg.shape)
         train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
         test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
         del bureau_agg
         gc.collect()
     with timer("Process Bureau Balance"):
-        bureau_balance_agg = ld.bureau_balance(nrows = None, silent = False, remove_duplicated_cols = True, ids2filter = ids2filter)
+        bureau_balance_agg = ld.bureau_balance(nrows = None, silent = False, remove_duplicated_cols = True)
         print("Bureau Balance df shape:", bureau_balance_agg.shape)
         train = train.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
         test = test.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
         del bureau_balance_agg
         gc.collect()
     with timer("Process previous_applications"):
-        previous_application_agg = ld.previous_application(nrows = None, silent = False, remove_duplicated_cols = True, ids2filter = ids2filter)
+        previous_application_agg = ld.previous_application(nrows = None, silent = False, remove_duplicated_cols = True)
         print("Previous applications df shape:", previous_application_agg.shape)
         train = train.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
         test = test.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
         del previous_application_agg
         gc.collect()
-    with timer("Process POS-CASH balance"):
-        pos_agg = ld.pos_cash(nrows = None, silent = False, remove_duplicated_cols = False, ids2filter = ids2filter)
-        print("Previous POS-CASH balance df shape:", pos_agg.shape)
-        train = train.merge(pos_agg, on = 'SK_ID_CURR', how = 'left')
-        test = test.merge(pos_agg, on = 'SK_ID_CURR', how = 'left')
-        del pos_agg
-        gc.collect()
+#    with timer("Process POS-CASH balance"):
+#        pos = pos_cash(num_rows)
+#        print("Pos-cash balance df shape:", pos.shape)
+#        df = df.join(pos, how='left', on='SK_ID_CURR')
+#        del pos
+#        gc.collect()
 #    with timer("Process installments payments"):
 #        ins = installments_payments(num_rows)
 #        print("Installments payments df shape:", ins.shape)
@@ -512,5 +509,23 @@ if __name__ == "__main__":
             #submit_xgb = pp.submit_file(ids, lgb_pred, prefix_file_name = "xgb", cv_score = xgb_cv_score)
     del test_X, train_X, train_y
     del features_variance
-    del feat_importance_lgb, ids, lgb_cv_score, lgb_pred, submit_lgb
     gc.collect()
+    
+    
+###############################################################################
+df_name_temp = '_'
+bureau_balance_agg = pp.get_engineered_features(bureau_balance, group_var = 'SK_ID_BUREAU', df_name = df_name_temp, num_agg_funcs = ['count', 'min', 'max'], cat_agg_funcs = ['sum'], cols_alias = ['count'])
+cash_agg 		   = pp.get_engineered_features(cash, group_var = 'SK_ID_PREV', df_name = "CASH", num_agg_funcs = ['count', 'min', 'max'], cat_agg_funcs = ['sum'], cols_alias = ['count'])
+
+
+bureau_balance = pp.read_dataset_csv(filename = "bureau_balance.csv", nrows = None)
+cash_balance = pp.read_dataset_csv(filename = "POS_CASH_balance.csv", nrows = None)
+credit_balance = pp.read_dataset_csv(filename = "credit_card_balance.csv", nrows = 10000)
+
+bureau = pp.read_dataset_csv(filename = "bureau.csv", nrows = None)
+
+bureau_not_found = set(bureau_balance[bureau_balance.SK_ID_BUREAU.isin(bureau.SK_ID_BUREAU) == False].SK_ID_BUREAU)
+
+bureau_balance = bureau.loc[:, ["SK_ID_BUREAU", "SK_ID_CURR"]].merge(bureau_balance, on = 'SK_ID_BUREAU', how = 'inner')
+
+del bureau
