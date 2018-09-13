@@ -517,15 +517,26 @@ df_name_temp = '_'
 bureau_balance_agg = pp.get_engineered_features(bureau_balance, group_var = 'SK_ID_BUREAU', df_name = df_name_temp, num_agg_funcs = ['count', 'min', 'max'], cat_agg_funcs = ['sum'], cols_alias = ['count'])
 cash_agg 		   = pp.get_engineered_features(cash, group_var = 'SK_ID_PREV', df_name = "CASH", num_agg_funcs = ['count', 'min', 'max'], cat_agg_funcs = ['sum'], cols_alias = ['count'])
 
+bureau = pp.read_dataset_csv(filename = "bureau.csv", nrows = None)
+previous_application = pp.read_dataset_csv(filename = "previous_application.csv", nrows = None)
 
 bureau_balance = pp.read_dataset_csv(filename = "bureau_balance.csv", nrows = None)
 cash_balance = pp.read_dataset_csv(filename = "POS_CASH_balance.csv", nrows = None)
-credit_balance = pp.read_dataset_csv(filename = "credit_card_balance.csv", nrows = 10000)
+credit_balance = pp.read_dataset_csv(filename = "credit_card_balance.csv", nrows = None)
 
-bureau = pp.read_dataset_csv(filename = "bureau.csv", nrows = None)
+installments = pp.read_dataset_csv(filename = "installments_payments.csv", nrows = None)
 
 bureau_not_found = set(bureau_balance[bureau_balance.SK_ID_BUREAU.isin(bureau.SK_ID_BUREAU) == False].SK_ID_BUREAU)
 
 bureau_balance = bureau.loc[:, ["SK_ID_BUREAU", "SK_ID_CURR"]].merge(bureau_balance, on = 'SK_ID_BUREAU', how = 'inner')
 
 del bureau
+
+bu_agg = get_engineered_features_2(bureau, group_var = ["SK_ID_CURR"], df_name = "BU")
+pa_agg = get_engineered_features_2(previous_application, group_var = ["SK_ID_CURR"], df_name = "PA")
+
+bb_agg = get_engineered_features_2(bureau_balance, group_var = ["SK_ID_CURR", "SK_ID_BUREAU"], df_name = "BB")
+cb_agg = get_engineered_features_2(cash_balance, group_var = ["SK_ID_CURR", "SK_ID_PREV"], df_name = "CB")
+cc_agg = get_engineered_features_2(credit_balance, group_var = ["SK_ID_CURR", "SK_ID_PREV"], df_name = "CC")
+
+ip_agg = get_engineered_features_2(installments, group_var = ["SK_ID_CURR", "SK_ID_PREV"], df_name = "IP")

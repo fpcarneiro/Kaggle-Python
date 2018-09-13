@@ -568,7 +568,7 @@ def agg_numeric_2(df, group_var, df_name, agg_funcs = ['count', 'mean', 'max', '
     agg = numeric_df.groupby(group_var).agg(agg_funcs).reset_index()
 
     # Need to create new column names
-    columns = group_var
+    columns = group_var[:]
 
     # Iterate through the variables names
     for var in agg.columns.levels[0]:
@@ -609,11 +609,11 @@ def count_categorical_2(df, group_var, df_name, agg_funcs = ['sum', 'mean'], col
     # Select the categorical columns
     cat_columns = list(df.select_dtypes(include=['object', 'category']).columns)
     categorical = pd.get_dummies(df.loc[:, group_var + cat_columns])
-
+    
     # Groupby the group var and calculate the sum and mean
     categorical = categorical.groupby(group_var).agg(agg_funcs).reset_index()
     
-    column_names = group_var
+    column_names = group_var[:]
     
     # Iterate through the columns in level 0
     for var in categorical.columns.levels[0]:
@@ -625,13 +625,13 @@ def count_categorical_2(df, group_var, df_name, agg_funcs = ['sum', 'mean'], col
                 column_names.append('%s_%s_%s' % (df_name, var, stat))
     
     categorical.columns = column_names
-    
+
     return categorical
 
-def get_engineered_features_2(df, group_var, df_name, num_agg_funcs = ['mean', 'max', 'min', 'sum', 'std', 'var'], cat_agg_funcs = ['sum', 'mean'], cols_alias = ['count', 'count_norm']):
-    numerical_agg = agg_numeric_2(df, group_var = group_var, df_name = df_name, agg_funcs = num_agg_funcs)
+def get_engineered_features_2(df, group_var, df_name):
+    num_agg = agg_numeric_2(df, group_var, df_name)
     if (any(df.dtypes == 'object') or any(df.dtypes == 'category')):
-        categorical_agg = count_categorical_2(df, group_var = group_var, df_name = df_name, agg_funcs = cat_agg_funcs, cols_alias = cols_alias).reset_index()
-        return numerical_agg.merge(categorical_agg, on = group_var, how = 'inner')
+        cat_agg = count_categorical_2(df, group_var, df_name)
+        return num_agg.merge(cat_agg, on = group_var, how = "inner")
     else:
-        return(numerical_agg)
+        return num_agg
