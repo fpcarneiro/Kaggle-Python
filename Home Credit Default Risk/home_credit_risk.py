@@ -530,13 +530,14 @@ bureau_not_found = set(bureau_balance[bureau_balance.SK_ID_BUREAU.isin(bureau.SK
 
 bureau_balance = bureau.loc[:, ["SK_ID_BUREAU", "SK_ID_CURR"]].merge(bureau_balance, on = 'SK_ID_BUREAU', how = 'inner')
 
+
+bu_agg = pp.get_engineered_features_2(bureau, group_var = ["SK_ID_CURR"], df_name = "BU")
+pa_agg = pp.get_engineered_features_2(previous_application, group_var = ["SK_ID_CURR"], df_name = "PA")
+
+bb_agg = pp.get_engineered_features_2(bureau_balance, group_var = ["SK_ID_CURR", "SK_ID_BUREAU"], df_name = "BB")
+cb_agg = pp.get_engineered_features_2(cash_balance, group_var = ["SK_ID_CURR", "SK_ID_PREV"], df_name = "CB")
+cc_agg = pp.get_engineered_features_2(credit_balance, group_var = ["SK_ID_CURR", "SK_ID_PREV"], df_name = "CC")
+
+ip_agg = pp.get_engineered_features_2(installments, group_var = ["SK_ID_CURR", "SK_ID_PREV"], df_name = "IP")
+
 del bureau
-
-bu_agg = get_engineered_features_2(bureau, group_var = ["SK_ID_CURR"], df_name = "BU")
-pa_agg = get_engineered_features_2(previous_application, group_var = ["SK_ID_CURR"], df_name = "PA")
-
-bb_agg = get_engineered_features_2(bureau_balance, group_var = ["SK_ID_CURR", "SK_ID_BUREAU"], df_name = "BB")
-cb_agg = get_engineered_features_2(cash_balance, group_var = ["SK_ID_CURR", "SK_ID_PREV"], df_name = "CB")
-cc_agg = get_engineered_features_2(credit_balance, group_var = ["SK_ID_CURR", "SK_ID_PREV"], df_name = "CC")
-
-ip_agg = get_engineered_features_2(installments, group_var = ["SK_ID_CURR", "SK_ID_PREV"], df_name = "IP")

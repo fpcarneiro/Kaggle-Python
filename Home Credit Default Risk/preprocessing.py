@@ -204,7 +204,7 @@ def get_domain_knowledge_features(X):
     
     return (X_domain.drop(cols_flag_del, axis = 1))
 
-def agg_numeric(df, group_var, df_name, agg_funcs = ['count', 'mean', 'max', 'min', 'sum', 'std', 'var']):
+def agg_numeric_old(df, group_var, df_name, agg_funcs = ['count', 'mean', 'max', 'min', 'sum', 'std', 'var']):
     """Aggregates the numeric values in a dataframe. This can
     be used to create features for each instance of the grouping variable.
     
@@ -253,7 +253,7 @@ def agg_numeric(df, group_var, df_name, agg_funcs = ['count', 'mean', 'max', 'mi
     agg.columns = columns
     return agg
 
-def count_categorical(df, group_var, df_name, agg_funcs = ['sum', 'mean'], cols_alias = ['count', 'count_norm']):
+def count_categorical_old(df, group_var, df_name, agg_funcs = ['sum', 'mean'], cols_alias = ['count', 'count_norm']):
     """Computes counts and normalized counts for each observation
     of `group_var` of each unique category in every categorical variable
     
@@ -352,10 +352,10 @@ def get_counts_features(df, group_var, count_var, df_name):
     counts.name = df_name + '_ROWCOUNT'
     return (counts.reset_index())
     
-def get_engineered_features(df, group_var, df_name, num_agg_funcs = ['mean', 'max', 'min', 'sum', 'std', 'var'], cat_agg_funcs = ['sum', 'mean'], cols_alias = ['count', 'count_norm']):
-    numerical_agg = agg_numeric(df, group_var = group_var, df_name = df_name, agg_funcs = num_agg_funcs)
+def get_engineered_features_old(df, group_var, df_name, num_agg_funcs = ['mean', 'max', 'min', 'sum', 'std', 'var'], cat_agg_funcs = ['sum', 'mean'], cols_alias = ['count', 'count_norm']):
+    numerical_agg = agg_numeric_old(df, group_var = group_var, df_name = df_name, agg_funcs = num_agg_funcs)
     if (any(df.dtypes == 'object') or any(df.dtypes == 'category')):
-        categorical_agg = count_categorical(df, group_var = group_var, df_name = df_name, agg_funcs = cat_agg_funcs, cols_alias = cols_alias).reset_index()
+        categorical_agg = count_categorical_old(df, group_var = group_var, df_name = df_name, agg_funcs = cat_agg_funcs, cols_alias = cols_alias).reset_index()
         return numerical_agg.merge(categorical_agg, on = group_var, how = 'inner')
     else:
         return(numerical_agg)
@@ -504,19 +504,10 @@ def convert_types(df, print_info = False):
 
 
 
-def agg_categorical_numeric(df, df_name, group_var = ['SK_ID_CURR', 'CREDIT_ACTIVE'], funcs = ['sum', 'mean'], target_numvar = ['DAYS_CREDIT', 'AMT_ANNUITY']):
+def agg_categorical_numeric(df, df_name, group_var, funcs = ['sum', 'mean'], num_columns = None):   
     
-    #counts = pd.get_dummies(df.loc[:, group_var])
-    #counts = counts.groupby(group_var[0]).agg('sum')
-    #counts.columns = [c[c.find(group_var[1]+'_')+len(group_var[1]+'_'):].upper()+'_COUNT' for c in list(counts.columns)]
-    
-    df_1 = df.loc[:, group_var + target_numvar].groupby(group_var).agg(funcs)
-    
-    column_names = []
-    for var in df_1.columns.levels[0]:
-        for stat in list(df_1.columns.levels[1].get_values()):
-            column_names.append('%s_%s' % (var, stat.upper()))
-    df_1.columns = column_names
+    df_1 = agg_numeric(df, group_var, df_name = "", agg_funcs = funcs, num_columns = num_columns)
+    column_names = list(df_1.columns)
     
     df_2 = df_1.pivot_table(columns=[group_var[1]], values= column_names, index= [group_var[0]], fill_value=0)
     
@@ -533,7 +524,7 @@ def agg_categorical_numeric(df, df_name, group_var = ['SK_ID_CURR', 'CREDIT_ACTI
     return (df_2)
 
 
-def agg_numeric_2(df, group_var, df_name, agg_funcs = ['count', 'mean', 'max', 'min', 'sum', 'std', 'var']):
+def agg_numeric(df, group_var, df_name, agg_funcs = ['mean', 'median', 'sum'], num_columns = None):
     """Aggregates the numeric values in a dataframe. This can
     be used to create features for each instance of the grouping variable.
     
@@ -555,14 +546,17 @@ def agg_numeric_2(df, group_var, df_name, agg_funcs = ['count', 'mean', 'max', '
             The columns are also renamed to keep track of features created.
     
     """
+    df_copy = df.copy()
+    
     # Remove id variables other than grouping variable
     id_vars = [col for col in df.columns if 'SK_ID' in col and col not in group_var]
     if len(id_vars) > 0:
-        df = df.drop(id_vars, axis = 1)
+        df_copy = df.drop(id_vars, axis = 1)
+        
+    if num_columns == None:       
+        num_columns = list(set(df_copy.select_dtypes(include=['number']).columns) - set(group_var))
             
-    #group_ids = df.loc[:, group_var].values
-    numeric_df = df.select_dtypes(include = ['number'])
-    #numeric_df.loc[:, group_var] = group_ids
+    numeric_df = df_copy.loc[:, group_var + num_columns]
 
     # Group by the specified variable and calculate the statistics
     agg = numeric_df.groupby(group_var).agg(agg_funcs).reset_index()
@@ -576,13 +570,14 @@ def agg_numeric_2(df, group_var, df_name, agg_funcs = ['count', 'mean', 'max', '
         if var not in group_var:
             # Iterate through the stat names
             for stat in agg.columns.levels[1][:-1]:
+                if stat:
                 # Make a new column name for the variable and stat
-                columns.append('%s_%s_%s' % (df_name, var, stat.upper()))
+                    columns.append('%s_%s_%s' % (df_name, var, stat.upper()))
 
     agg.columns = columns
     return agg
 
-def count_categorical_2(df, group_var, df_name, agg_funcs = ['sum', 'mean'], cols_alias = ['COUNT', 'COUNT_NORM']):
+def agg_categorical(df, group_var, df_name, agg_funcs = ['sum', 'mean'], cols_alias = ['COUNT', 'COUNT_NORM']):
     """Computes counts and normalized counts for each observation
     of `group_var` of each unique category in every categorical variable
     
@@ -622,16 +617,37 @@ def count_categorical_2(df, group_var, df_name, agg_funcs = ['sum', 'mean'], col
             # Iterate through the stats in level 1
             for stat in cols_alias:
                 # Make a new column name
-                column_names.append('%s_%s_%s' % (df_name, var, stat))
+                if stat:
+                    column_names.append('%s_%s_%s' % (df_name, var, stat))
     
     categorical.columns = column_names
 
     return categorical
 
-def get_engineered_features_2(df, group_var, df_name):
-    num_agg = agg_numeric_2(df, group_var, df_name)
+#def get_engineered_features_old(df, group_var, df_name, num_agg_funcs = ['mean', 'max', 'min', 'sum', 'std', 'var'], cat_agg_funcs = ['sum', 'mean'], cols_alias = ['count', 'count_norm']):
+def get_engineered_features(df, group_var, df_name, num_agg_funcs = ['mean', 'median', 'sum']):
+    num_agg = agg_numeric(df, group_var, df_name, agg_funcs = num_agg_funcs)
     if (any(df.dtypes == 'object') or any(df.dtypes == 'category')):
-        cat_agg = count_categorical_2(df, group_var, df_name)
+        cat_agg = agg_categorical(df, group_var, df_name)
         return num_agg.merge(cat_agg, on = group_var, how = "inner")
     else:
         return num_agg
+    
+def join_low_occurance_categories(df, silent = True, join_category_name = "Other 2"):
+    df_copy = df.copy()
+    
+    _, cat_cols = get_feature_groups(df_copy)
+    
+    if not silent:
+        print("Decreading the number of categories...")
+    
+    for col in cat_cols:
+        cat_values_table = check_categorical_cols_values(df_copy, col = col)
+        s_low_values = set(cat_values_table[cat_values_table.loc[:, "% of Total"] < 1].index)
+        
+        if len(s_low_values) >= 2:
+            if not silent:
+                print("Decreasing the number of categories in {}...".format(col))
+                print("The following categories will be grouped: {}".format(s_low_values))
+            df_copy.loc[df_copy[col].isin(s_low_values), col] = join_category_name
+    return df_copy

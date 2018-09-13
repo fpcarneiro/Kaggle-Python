@@ -106,7 +106,7 @@ def load_train_test(nrows = None, silent = True, treat_cat_missing = False, trea
     
     return train, test
 
-def bureau(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "B"):
+def bureau_old(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "B"):
     bureau = pp.read_dataset_csv(filename = "bureau.csv", nrows = nrows)
 
     if (treat_num_missing):
@@ -171,7 +171,7 @@ def bureau(nrows = None, silent = True, treat_cat_missing = False, treat_num_mis
     
     #return bureau_cat_num_agg
     
-def bureau_balance(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "BB"):
+def bureau_balance_old(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "BB"):
     group_vars = ['SK_ID_BUREAU', 'SK_ID_CURR']
     
     bureau_balance = pp.read_dataset_csv(filename = "bureau_balance.csv", nrows = nrows)
@@ -205,8 +205,109 @@ def bureau_balance(nrows = None, silent = True, treat_cat_missing = False, treat
 
     return bureau_balance_agg_by_client
 
+def bureau(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "BU"):
+    group_var = ['SK_ID_CURR']
+    
+    bureau = pp.read_dataset_csv(filename = "bureau.csv", nrows = nrows)
+    
+    if not silent:
+        print("Bureau Shape: {}".format(bureau.shape))
+        
+    # Decrease number of categories   
+    bureau = pp.join_low_occurance_categories(bureau, silent, join_category_name = "Other 2")
+    
+    if not silent:
+        print("Aggregating BUREAU by categories of 'SK_ID_CURR' and 'CREDIT_ACTIVE'...")
+    bu_agg_1 = pp.agg_categorical_numeric(bureau, df_name + "1", 
+                                          group_var = ['SK_ID_CURR', 'CREDIT_ACTIVE'], 
+                                          num_columns = ['DAYS_CREDIT', 'AMT_ANNUITY'])
+    
+    if not silent:
+        print("Aggregating BUREAU by only 'SK_ID_CURR'...")
+    #counts = pp.get_counts_features(bureau, group_var = 'SK_ID_CURR', count_var = 'SK_ID_BUREAU', df_name = df_name + '2')
+    bu_agg_2 = pp.get_engineered_features(bureau, group_var, df_name + "2")
+    
+    #return bu_agg_1, bu_agg_2
+    return bu_agg_1.merge(bu_agg_2, on = group_var[0], how = 'left')
 
 def previous_application(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "PA"):
+    group_var = ['SK_ID_CURR']
+    
+    previous_application = pp.read_dataset_csv(filename = "previous_application.csv", nrows = nrows)
+    
+    if not silent:
+        print("Previous Application Shape: {}".format(previous_application.shape))
+        
+    # Decrease number of categories   
+    previous_application = pp.join_low_occurance_categories(previous_application, silent, join_category_name = "Other 2")
+    
+    pa_agg = pp.get_engineered_features(previous_application, group_var, df_name)
+    
+    return pa_agg
+
+def bureau_balance(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "BB"):
+    group_vars = ['SK_ID_CURR', 'SK_ID_BUREAU']
+    
+    bureau_balance = pp.read_dataset_csv(filename = "bureau_balance.csv", nrows = nrows)
+    bureau = pp.read_dataset_csv(filename = "bureau.csv", nrows = nrows, usecols = group_vars)
+    bureau_balance = bureau.merge(bureau_balance, on = 'SK_ID_BUREAU', how = 'inner')
+    
+    if not silent:
+        print("Bureau Balance Shape: {}".format(bureau_balance.shape))
+        
+    # Decrease number of categories   
+    bureau_balance = pp.join_low_occurance_categories(bureau_balance, silent, join_category_name = "Other 2")
+    
+    bb_agg = pp.get_engineered_features(bureau_balance, group_vars, df_name)
+    
+    return bb_agg
+
+def cash_balance(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "CB"):
+    group_vars = ['SK_ID_CURR', 'SK_ID_PREV']
+    
+    cash_balance = pp.read_dataset_csv(filename = "POS_CASH_balance.csv", nrows = nrows)
+    
+    if not silent:
+        print("Cash Balance Shape: {}".format(cash_balance.shape))
+        
+    # Decrease number of categories   
+    cash_balance = pp.join_low_occurance_categories(cash_balance, silent, join_category_name = "Other 2")
+
+    cb_agg = pp.get_engineered_features(cash_balance, group_vars, df_name)
+    
+    return cb_agg
+
+def credit_balance(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "CCB"):
+    group_vars = ['SK_ID_CURR', 'SK_ID_PREV']
+    
+    credit_balance = pp.read_dataset_csv(filename = "credit_card_balance.csv", nrows = nrows)
+    
+    if not silent:
+        print("Credit Card Balance Shape: {}".format(credit_balance.shape))
+        
+    # Decrease number of categories   
+    credit_balance = pp.join_low_occurance_categories(credit_balance, silent, join_category_name = "Other 2")
+
+    ccb_agg = pp.get_engineered_features(credit_balance, group_vars, df_name)
+    
+    return ccb_agg
+
+def installments_payments(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "IP"):
+    group_vars = ['SK_ID_CURR', 'SK_ID_PREV']
+    
+    installments = pp.read_dataset_csv(filename = "installments_payments.csv", nrows = nrows)
+    
+    if not silent:
+        print("Installment Payments Shape: {}".format(installments.shape))
+        
+    # Decrease number of categories   
+    installments = pp.join_low_occurance_categories(installments, silent, join_category_name = "Other 2")
+
+    ip_agg = pp.get_engineered_features(installments, group_vars, df_name)
+    
+    return ip_agg
+
+def previous_application_old(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "PA"):
     previous_application = pp.read_dataset_csv(filename = "previous_application.csv", nrows = nrows)
     
     if not silent:
@@ -307,4 +408,4 @@ def previous_application(nrows = None, silent = True, treat_cat_missing = False,
 #    previous_application_agg = pp.convert_types(previous_application_agg, print_info = True)
 #    previous_application_cat_num_agg = pp.convert_types(previous_application_cat_num_agg, print_info = True)
 
-    return previous_application_agg.merge(previous_application_cat_num_agg, on = 'SK_ID_CURR', how = 'left')   
+    return previous_application_agg.merge(previous_application_cat_num_agg, on = 'SK_ID_CURR', how = 'left')
