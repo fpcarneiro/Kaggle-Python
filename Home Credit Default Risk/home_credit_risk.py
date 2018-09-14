@@ -410,33 +410,34 @@ def go_cv(trainset_X, trainset_y):
 
 
 
-debug_size = 0
+debug_size = 10000
 
 def process_files(debug_size = 0, treat_duplicated = False, select_features_model = False):
     num_rows = debug_size if debug_size != 0 else None
     with timer("Process application_train and application_test"):
         train, test = ld.load_train_test(nrows = num_rows, silent = True)
+        subset_ids = list(train.SK_ID_CURR) + list(test.SK_ID_CURR) if debug_size != 0 else None
     with timer("Process Bureau"):
-        bureau_agg = ld.bureau(nrows = None, silent = False)
+        bureau_agg = ld.bureau(subset_ids, silent = False)
         print("Bureau df shape:", bureau_agg.shape)
         train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
         test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
         del bureau_agg
         gc.collect()
-    with timer("Process Bureau Balance"):
-        bureau_balance_agg = ld.bureau_balance(nrows = None, silent = False, remove_duplicated_cols = True)
-        print("Bureau Balance df shape:", bureau_balance_agg.shape)
-        train = train.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
-        test = test.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
-        del bureau_balance_agg
-        gc.collect()
-    with timer("Process previous_applications"):
-        previous_application_agg = ld.previous_application(nrows = None, silent = False, remove_duplicated_cols = True)
-        print("Previous applications df shape:", previous_application_agg.shape)
-        train = train.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
-        test = test.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
-        del previous_application_agg
-        gc.collect()
+#    with timer("Process Bureau Balance"):
+#        bureau_balance_agg = ld.bureau_balance(nrows = None, silent = False, remove_duplicated_cols = True)
+#        print("Bureau Balance df shape:", bureau_balance_agg.shape)
+#        train = train.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
+#        test = test.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
+#        del bureau_balance_agg
+#        gc.collect()
+#    with timer("Process previous_applications"):
+#        previous_application_agg = ld.previous_application(nrows = None, silent = False, remove_duplicated_cols = True)
+#        print("Previous applications df shape:", previous_application_agg.shape)
+#        train = train.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
+#        test = test.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
+#        del previous_application_agg
+#        gc.collect()
 #    with timer("Process POS-CASH balance"):
 #        pos = pos_cash(num_rows)
 #        print("Pos-cash balance df shape:", pos.shape)
@@ -477,7 +478,7 @@ def process_files(debug_size = 0, treat_duplicated = False, select_features_mode
             pipeline.fit(train_X, train_y)
 
             features_select_from_model = list(train_X.loc[:, pipeline.named_steps['reduce_dim'].get_support()].columns)
-            print("Models will be trained with {} of {} features.".format(len(features_select_from_model), original_num_columns))
+            print("Models will be trained with {} out of {} features.".format(len(features_select_from_model), original_num_columns))
 
             #train = pipeline.transform(train_X)
             #test = pipeline.transform(test_X)

@@ -347,8 +347,11 @@ def kde_target(var_name, df):
     print('Median value for loan that was not repaid = %0.4f' % avg_not_repaid)
     print('Median value for loan that was repaid =     %0.4f' % avg_repaid)
 
-def get_counts_features(df, group_var, count_var, df_name):
-    counts = df.groupby(group_var)[count_var].agg('count')
+def get_counts_features(df, group_var, df_name, count_var = None):
+    if count_var != None:
+        counts = df.groupby(group_var)[count_var].agg('count')
+    else:
+        counts = df.groupby(group_var)[group_var].agg('count')
     counts.name = df_name + '_ROWCOUNT'
     return (counts.reset_index())
     

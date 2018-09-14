@@ -205,16 +205,24 @@ def bureau_balance_old(nrows = None, silent = True, treat_cat_missing = False, t
 
     return bureau_balance_agg_by_client
 
-def bureau(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "BU"):
+def bureau(subset_ids = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "BU"):
     group_var = ['SK_ID_CURR']
     
-    bureau = pp.read_dataset_csv(filename = "bureau.csv", nrows = nrows)
+    bureau = pp.read_dataset_csv(filename = "bureau.csv")
+    
+    if subset_ids != None:
+        bureau = bureau.loc[bureau.SK_ID_CURR.isin(subset_ids)]
     
     if not silent:
         print("Bureau Shape: {}".format(bureau.shape))
         
     # Decrease number of categories   
     bureau = pp.join_low_occurance_categories(bureau, silent, join_category_name = "Other 2")
+    
+    if (treat_num_missing):
+        if not silent:
+            print("Treating numericals missing...")
+        bureau = pp.handle_missing_median(bureau, pp.get_numerical_missing_cols(bureau), group_by_cols = ["CREDIT_TYPE"])
     
     if not silent:
         print("Aggregating BUREAU by categories of 'SK_ID_CURR' and 'CREDIT_ACTIVE'...")
@@ -224,10 +232,11 @@ def bureau(nrows = None, silent = True, treat_cat_missing = False, treat_num_mis
     
     if not silent:
         print("Aggregating BUREAU by only 'SK_ID_CURR'...")
-    #counts = pp.get_counts_features(bureau, group_var = 'SK_ID_CURR', count_var = 'SK_ID_BUREAU', df_name = df_name + '2')
+    counts = pp.get_counts_features(bureau, group_var, df_name + "2")
     bu_agg_2 = pp.get_engineered_features(bureau, group_var, df_name + "2")
     
-    #return bu_agg_1, bu_agg_2
+    bu_agg_2 = counts.merge(bu_agg_2, on = group_var[0], how = 'left')
+
     return bu_agg_1.merge(bu_agg_2, on = group_var[0], how = 'left')
 
 def previous_application(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "PA"):
@@ -258,9 +267,18 @@ def bureau_balance(nrows = None, silent = True, treat_cat_missing = False, treat
     # Decrease number of categories   
     bureau_balance = pp.join_low_occurance_categories(bureau_balance, silent, join_category_name = "Other 2")
     
+    counts_bb = pp.get_counts_features(bureau_balance, group_vars, df_name, group_vars[1])
     bb_agg = pp.get_engineered_features(bureau_balance, group_vars, df_name)
+    cols_status = [c for c in bb_agg.columns if c.endswith("_COUNT") and c.find("_STATUS_") != -1 and c not in [df_name + "_STATUS_X_COUNT", df_name + "_STATUS_C_COUNT", df_name + "_STATUS_0_COUNT"]]
     
-    return bb_agg
+    bb_agg = counts_bb.merge(bb_agg, on = group_vars, how = 'left')
+    
+    bb_agg[df_name + "_DPD_COUNT"] = bb_agg.loc[:, cols_status].sum(axis=1)
+    bb_agg[df_name + "_DPD_FREQ"] = bb_agg[df_name + "_DPD_COUNT"] / bb_agg["BB_ROWCOUNT"]
+    
+    bb_agg_client = pp.agg_numeric(bb_agg, list(group_vars[0]), df_name)
+    
+    return bb_agg_client
 
 def cash_balance(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False, df_name = "CB"):
     group_vars = ['SK_ID_CURR', 'SK_ID_PREV']
