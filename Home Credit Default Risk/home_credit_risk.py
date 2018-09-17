@@ -32,200 +32,7 @@ from sklearn.preprocessing import Imputer
 
 plt.style.use('fivethirtyeight')
 
-train, test = ld.load_train_test(nrows = 10000, silent = True)
 
-train.to_csv("input/train_engineered_1.csv", compression="zip")
-test.to_csv("input/test_engineered_1.csv", compression="zip")
-
-bureau_agg = ld.bureau(nrows = None, silent = False)
-
-train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
-test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
-
-del bureau_agg
-gc.collect()
-
-train.to_csv("input/train_engineered_2.csv", compression="zip")
-test.to_csv("input/test_engineered_2.csv", compression="zip")
-
-bureau_balance_agg = ld.bureau_balance(nrows = 10000, silent = False)
-
-train.to_csv("input/train_engineered_3.csv", compression="zip")
-test.to_csv("input/test_engineered_3.csv", compression="zip")
-
-previous_application_agg = ld.previous_application(nrows = None, silent = False, remove_duplicated_cols = True)
-
-previous_application = pp.read_dataset_csv(filename = "previous_application.csv")
-
-print(pp.check_missing(previous_application[pp.get_numerical_missing_cols(previous_application)]))
-previous_application.drop(['RATE_INTEREST_PRIMARY', 'RATE_INTEREST_PRIVILEGED', 'DAYS_FIRST_DRAWING'], axis=1, inplace = True)
-
-#previous_application = pp.handle_missing_median(previous_application, pp.get_numerical_missing_cols(previous_application), group_by_cols = ["SK_ID_CURR"])
-#print(pp.check_missing(previous_application[pp.get_numerical_missing_cols(previous_application)]))
-
-previous_application.loc[:, 'HOUR_APPR_PROCESS_START'] = previous_application.loc[:, 'HOUR_APPR_PROCESS_START'].astype('object')
-
-previous_application.NFLAG_INSURED_ON_APPROVAL.fillna(0, inplace= True)
-previous_application.loc[:, 'NFLAG_INSURED_ON_APPROVAL'] = previous_application.loc[:, 'NFLAG_INSURED_ON_APPROVAL'].astype('int32')
-
-cat_cols2encode = ["NFLAG_INSURED_ON_APPROVAL", "FLAG_LAST_APPL_PER_CONTRACT", "NFLAG_LAST_APPL_IN_DAY"]
-
-le = LabelEncoder()
-for col in cat_cols2encode:
-    le.fit(previous_application[col])
-    previous_application[col] = le.transform(previous_application[col])
-
-# Decrease number of categories in NAME_CASH_LOAN_PURPOSE
-previous_application_nclp_table = pp.check_categorical_cols_values(previous_application, col = "NAME_CASH_LOAN_PURPOSE")
-s_previous_application = set(previous_application_nclp_table[previous_application_nclp_table.loc[:, "% of Total"] < 1].index)
-previous_application.loc[previous_application.NAME_CASH_LOAN_PURPOSE.isin(s_previous_application), 'NAME_CASH_LOAN_PURPOSE'] = "Other 2"
-
-previous_application_npt_table = pp.check_categorical_cols_values(previous_application, col = "NAME_PAYMENT_TYPE")
-s_previous_application = set(previous_application_npt_table[previous_application_npt_table.loc[:, "% of Total"] < 1].index)
-previous_application.loc[previous_application.NAME_PAYMENT_TYPE.isin(s_previous_application), 'NAME_PAYMENT_TYPE'] = "Other 2"
-
-previous_application_crr_table = pp.check_categorical_cols_values(previous_application, col = "CODE_REJECT_REASON")
-s_previous_application = set(previous_application_crr_table[previous_application_crr_table.loc[:, "% of Total"] < 1].index)
-previous_application.loc[previous_application.CODE_REJECT_REASON.isin(s_previous_application), 'CODE_REJECT_REASON'] = "Other 2"
-
-previous_application_nts_table = pp.check_categorical_cols_values(previous_application, col = "NAME_TYPE_SUITE")
-s_previous_application = set(previous_application_nts_table[previous_application_nts_table.loc[:, "% of Total"] < 1.5].index)
-previous_application.loc[previous_application.NAME_TYPE_SUITE.isin(s_previous_application), 'NAME_TYPE_SUITE'] = "Other 2"
-
-previous_application_ngc_table = pp.check_categorical_cols_values(previous_application, col = "NAME_GOODS_CATEGORY")
-s_previous_application = set(previous_application_ngc_table[previous_application_ngc_table.loc[:, "% of Total"] < 1].index)
-previous_application.loc[previous_application.NAME_GOODS_CATEGORY.isin(s_previous_application), 'NAME_GOODS_CATEGORY'] = "Other 2"
-
-previous_application_ct_table = pp.check_categorical_cols_values(previous_application, col = "CHANNEL_TYPE")
-s_previous_application = set(previous_application_ct_table[previous_application_ct_table.loc[:, "% of Total"] < 1].index)
-previous_application.loc[previous_application.CHANNEL_TYPE.isin(s_previous_application), 'CHANNEL_TYPE'] = "Other 2"
-
-previous_application_nsi_table = pp.check_categorical_cols_values(previous_application, col = "NAME_SELLER_INDUSTRY")
-s_previous_application = set(previous_application_nsi_table[previous_application_nsi_table.loc[:, "% of Total"] < 2].index)
-previous_application.loc[previous_application.NAME_SELLER_INDUSTRY.isin(s_previous_application), 'NAME_SELLER_INDUSTRY'] = "Other 2"
-
-previous_application_pc_table = pp.check_categorical_cols_values(previous_application, col = "PRODUCT_COMBINATION")
-s_previous_application = set(previous_application_pc_table[previous_application_pc_table.loc[:, "% of Total"] < 1].index)
-previous_application.loc[previous_application.PRODUCT_COMBINATION.isin(s_previous_application), 'PRODUCT_COMBINATION'] = "Other 2"
-
-previous_application.PRODUCT_COMBINATION.fillna("Other 2", inplace= True)
-
-#previous_application['DAYS_FIRST_DRAWING_ANOM'] = previous_application["DAYS_FIRST_DRAWING"] == 365243
-#previous_application['DAYS_FIRST_DRAWING'].replace(365243, np.nan, inplace= True)
-
-previous_application['DAYS_FIRST_DUE_ANOM'] = previous_application["DAYS_FIRST_DUE"] == 365243
-previous_application['DAYS_FIRST_DUE'].replace(365243, np.nan, inplace= True)
-
-previous_application['DAYS_LAST_DUE_1ST_VERSION_ANOM'] = previous_application["DAYS_LAST_DUE_1ST_VERSION"] == 365243
-previous_application['DAYS_LAST_DUE_1ST_VERSION'].replace(365243, np.nan, inplace= True)
-
-previous_application['DAYS_LAST_DUE_ANOM'] = previous_application["DAYS_LAST_DUE"] == 365243
-previous_application['DAYS_LAST_DUE'].replace(365243, np.nan, inplace= True)
-
-previous_application['DAYS_TERMINATION_ANOM'] = previous_application["DAYS_TERMINATION"] == 365243
-previous_application['DAYS_TERMINATION'].replace(365243, np.nan, inplace= True)
-# Add feature: value ask / value received percentage
-
-#previous_application['APP_CREDIT_PERC'] = previous_application['AMT_APPLICATION'] / previous_application['AMT_CREDIT']
-
-previous_application = pp.handle_missing_median(previous_application, pp.get_numerical_missing_cols(previous_application), group_by_cols = ["NAME_CONTRACT_STATUS"])
-print(pp.check_missing(previous_application[pp.get_numerical_missing_cols(previous_application)]))
-
-numeric_cols = pp.get_dtype_columns(previous_application, dtypes = [np.dtype(np.int64), np.dtype(np.float64)])
-previous_application_cat_num_agg = pp.agg_categorical_numeric(previous_application, df_name = "previous_application", 
-                                                funcs = ['sum', 'mean', 'std'], group_var = ['SK_ID_CURR', 'NAME_CONTRACT_STATUS'], 
-                                                target_numvar = numeric_cols)
-
-previous_application_agg = pp.get_engineered_features(previous_application.drop(['SK_ID_PREV'], axis=1), group_var = 'SK_ID_CURR', df_name = 'previous', num_agg_funcs = ['count', 'mean', 'median', 'sum'])
-
-duplicated_previous_application_agg = pp.duplicate_columns(previous_application_agg, verbose = True, progress = False)
-if len(duplicated_previous_application_agg) > 0:
-    previous_application_agg.drop(list(duplicated_previous_application_agg.keys()), axis=1, inplace = True)
-    
-duplicated_previous_application_cat_num_agg = pp.duplicate_columns(previous_application_cat_num_agg, verbose = True, progress = False)
-if len(duplicated_previous_application_cat_num_agg) > 0:
-    previous_application_cat_num_agg.drop(list(duplicated_previous_application_cat_num_agg.keys()), axis=1, inplace = True)
-    
-previous_application_agg_id_columns = list(set([c for c in previous_application_agg.columns if c.startswith("SK_ID_")] + [c for c in previous_application_cat_num_agg.columns if c.startswith("SK_ID_")]))
-previous_application_agg_columns = list(set([c for c in previous_application_agg.columns if c not in previous_application_agg_id_columns] + [c for c in previous_application_cat_num_agg.columns if c not in previous_application_agg_id_columns]))
-
-previous_application_agg = pp.convert_types(previous_application_agg, print_info = True)
-previous_application_cat_num_agg = pp.convert_types(previous_application_cat_num_agg, print_info = True)
-
-train = train.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
-test = test.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
-
-train = train.merge(previous_application_cat_num_agg, on = 'SK_ID_CURR', how = 'left')
-test = test.merge(previous_application_cat_num_agg, on = 'SK_ID_CURR', how = 'left')
-
-gc.enable()
-del previous_application, previous_application_agg
-del previous_application_nclp_table, s_previous_application, previous_application_npt_table, previous_application_crr_table, previous_application_nts_table, previous_application_ngc_table, 
-del previous_application_ct_table, previous_application_nsi_table, previous_application_pc_table, cat_cols2encode, numeric_cols
-del previous_application_cat_num_agg, duplicated_previous_application_agg, duplicated_previous_application_cat_num_agg
-gc.collect()
-
-train.to_csv("input/train_engineered_4.csv", compression="zip")
-test.to_csv("input/test_engineered_4.csv", compression="zip")
-
-group_vars = ['SK_ID_PREV', 'SK_ID_CURR']
-cash = pp.read_dataset_csv(filename = "POS_CASH_balance.csv")
-
-cash_ncs_table = pp.check_categorical_cols_values(cash, col = "NAME_CONTRACT_STATUS")
-s_cash = set(cash_ncs_table[cash_ncs_table.loc[:, "% of Total"] < 1].index)
-cash.loc[cash.NAME_CONTRACT_STATUS.isin(s_cash), 'NAME_CONTRACT_STATUS'] = "Other 2"
-
-cash = pp.convert_types(cash, print_info=True)
-
-cash_agg = pp.get_engineered_features(cash, group_var = 'SK_ID_PREV', df_name = "CASH", num_agg_funcs = ['count', 'min', 'max'], cat_agg_funcs = ['sum'], cols_alias = ['count'])
-cash_agg = cash_agg.merge(cash[[group_vars[0], group_vars[1]]], on = group_vars[0], how = 'inner')
-cash_agg = cash_agg.drop([group_vars[0]], axis=1)
-cash_agg_by_client = pp.agg_numeric(cash_agg, group_var = group_vars[1], df_name = 'CLIENT', agg_funcs = ['count', 'mean', 'median', 'sum'])
-
-#cash_agg = pp.aggregate_client_2(cash, group_vars = group_vars, df_names = ['cash', 'client'])
-
-cash_agg = pp.convert_types(cash_agg, print_info = True)
-cash_agg_by_client = pp.convert_types(cash_agg_by_client, print_info = True)
-
-duplicated_cash_agg_by_client = pp.duplicate_columns(cash_agg_by_client, verbose = True, progress = False)
-if len(duplicated_cash_agg_by_client) > 0:
-    cash_agg_by_client.drop(list(duplicated_cash_agg_by_client.keys()), axis=1, inplace = True)
-
-train = train.merge(cash_agg_by_client, on = 'SK_ID_CURR', how = 'left')
-test = test.merge(cash_agg_by_client, on = 'SK_ID_CURR', how = 'left')
-
-gc.enable()
-del cash, cash_agg
-del cash_ncs_table, s_cash
-del cash_agg_by_client, duplicated_cash_agg_by_client
-gc.collect()
-
-train.to_csv("input/train_engineered_5.csv", compression="zip")
-test.to_csv("input/test_engineered_5.csv", compression="zip")
-
-credit_card_balance = pp.convert_types(pp.read_dataset_csv(filename = "credit_card_balance.csv"), print_info=True)
-credit_card_balance_agg = pp.aggregate_client_2(credit_card_balance, group_vars = group_vars, df_names = ['credit', 'client'])
-train = train.merge(credit_card_balance_agg, on = 'SK_ID_CURR', how = 'left')
-test = test.merge(credit_card_balance_agg, on = 'SK_ID_CURR', how = 'left')
-
-gc.enable()
-del credit_card_balance, credit_card_balance_agg
-gc.collect()
-
-installments_payments = pp.convert_types(pp.read_dataset_csv(filename = "installments_payments.csv"), print_info=True)
-installments_payments_agg = pp.aggregate_client_2(installments_payments, group_vars = group_vars, df_names = ['installments', 'client'])
-
-duplicated_installments_payments_agg = pp.duplicate_columns(installments_payments_agg, verbose = True, progress = False)
-if len(duplicated_installments_payments_agg) > 0:
-    installments_payments_agg.drop(list(duplicated_installments_payments_agg.keys()), axis=1, inplace = True)
-
-train = train.merge(installments_payments_agg, on = 'SK_ID_CURR', how = 'left')
-test = test.merge(installments_payments_agg, on = 'SK_ID_CURR', how = 'left')
-
-gc.enable()
-del installments_payments, installments_payments_agg, group_vars
-del duplicated_installments_payments_agg
-gc.collect()
 
 train_X = train.fillna(0)
 test_X = test.fillna(0)
@@ -410,13 +217,15 @@ def go_cv(trainset_X, trainset_y):
 
 
 
-debug_size = 10000
+debug_size = 0
 
 def process_files(debug_size = 0, treat_duplicated = False, select_features_model = False):
     num_rows = debug_size if debug_size != 0 else None
     with timer("Process application_train and application_test"):
         train, test = ld.load_train_test(nrows = num_rows, silent = True)
         subset_ids = list(train.SK_ID_CURR) + list(test.SK_ID_CURR) if debug_size != 0 else None
+        print("Train df shape:", train.shape)
+        print("Test df shape:", test.shape)
     with timer("Process Bureau"):
         bureau_agg = ld.bureau(subset_ids, silent = False)
         print("Bureau df shape:", bureau_agg.shape)
@@ -424,38 +233,41 @@ def process_files(debug_size = 0, treat_duplicated = False, select_features_mode
         test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
         del bureau_agg
         gc.collect()
-#    with timer("Process Bureau Balance"):
-#        bureau_balance_agg = ld.bureau_balance(nrows = None, silent = False, remove_duplicated_cols = True)
-#        print("Bureau Balance df shape:", bureau_balance_agg.shape)
-#        train = train.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
-#        test = test.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
-#        del bureau_balance_agg
-#        gc.collect()
-#    with timer("Process previous_applications"):
-#        previous_application_agg = ld.previous_application(nrows = None, silent = False, remove_duplicated_cols = True)
-#        print("Previous applications df shape:", previous_application_agg.shape)
-#        train = train.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
-#        test = test.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
-#        del previous_application_agg
-#        gc.collect()
-#    with timer("Process POS-CASH balance"):
-#        pos = pos_cash(num_rows)
-#        print("Pos-cash balance df shape:", pos.shape)
-#        df = df.join(pos, how='left', on='SK_ID_CURR')
-#        del pos
-#        gc.collect()
-#    with timer("Process installments payments"):
-#        ins = installments_payments(num_rows)
-#        print("Installments payments df shape:", ins.shape)
-#        df = df.join(ins, how='left', on='SK_ID_CURR')
-#        del ins
-#        gc.collect()
-#    with timer("Process credit card balance"):
-#        cc = credit_card_balance(num_rows)
-#        print("Credit card balance df shape:", cc.shape)
-#        df = df.join(cc, how='left', on='SK_ID_CURR')
-#        del cc
-#        gc.collect()
+    with timer("Process Bureau Balance"):
+        bureau_balance_agg = ld.bureau_balance(subset_ids, silent = False)
+        print("Bureau Balance df shape:", bureau_balance_agg.shape)
+        train = train.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
+        test = test.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
+        del bureau_balance_agg
+        gc.collect()
+    with timer("Process previous_applications"):
+        previous_application_agg = ld.previous_application(subset_ids, silent = False)
+        print("Previous applications df shape:", previous_application_agg.shape)
+        train = train.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
+        test = test.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
+        del previous_application_agg
+        gc.collect()
+    with timer("Process POS-CASH balance"):
+        cash_balance_agg = ld.cash_balance(subset_ids, silent = False)
+        print("Cash Balance df shape:", cash_balance_agg.shape)
+        train = train.merge(cash_balance_agg, on = 'SK_ID_CURR', how = 'left')
+        test = test.merge(cash_balance_agg, on = 'SK_ID_CURR', how = 'left')
+        del cash_balance_agg
+        gc.collect()
+    with timer("Process credit card balance"):
+        credit_balance_agg = ld.credit_balance(subset_ids, silent = False)
+        print("Credit Card Balance df shape:", credit_balance_agg.shape)
+        train = train.merge(credit_balance_agg, on = 'SK_ID_CURR', how = 'left')
+        test = test.merge(credit_balance_agg, on = 'SK_ID_CURR', how = 'left')
+        del credit_balance_agg
+        gc.collect()
+    with timer("Process installments payments"):
+        installments_payments_agg = ld.installments_payments(subset_ids, silent = False)
+        print("Installments Payments df shape:", installments_payments_agg.shape)
+        train = train.merge(installments_payments_agg, on = 'SK_ID_CURR', how = 'left')
+        test = test.merge(installments_payments_agg, on = 'SK_ID_CURR', how = 'left')
+        del installments_payments_agg
+        gc.collect()
     
     train = pp.convert_types(train, print_info = True)
     test = pp.convert_types(test, print_info = True)
@@ -504,41 +316,10 @@ if __name__ == "__main__":
             lgb_cv_score, lgb_pred, feat_importance_lgb = kfold_lightgbm(train_X, train_y, test_X, num_folds= 5, stratified= False)
             display_importances(feat_importance_lgb)
             submit_lgb = pp.submit_file(ids, lgb_pred, prefix_file_name = "lightgbm", cv_score = lgb_cv_score)
-        #with timer("Run XGB with kfold"):
-            #xgb_cv_score, xgb_pred, feat_importance_xgb = kfold_xgb(train_X, train_y, test_X, num_folds= 5, stratified= False)
-            #display_importances(feat_importance_xgb)
-            #submit_xgb = pp.submit_file(ids, lgb_pred, prefix_file_name = "xgb", cv_score = xgb_cv_score)
+        with timer("Run XGB with kfold"):
+            xgb_cv_score, xgb_pred, feat_importance_xgb = kfold_xgb(train_X, train_y, test_X, num_folds= 5, stratified= False)
+            display_importances(feat_importance_xgb)
+            submit_xgb = pp.submit_file(ids, lgb_pred, prefix_file_name = "xgb", cv_score = xgb_cv_score)
     del test_X, train_X, train_y
     del features_variance
     gc.collect()
-    
-    
-###############################################################################
-df_name_temp = '_'
-bureau_balance_agg = pp.get_engineered_features(bureau_balance, group_var = 'SK_ID_BUREAU', df_name = df_name_temp, num_agg_funcs = ['count', 'min', 'max'], cat_agg_funcs = ['sum'], cols_alias = ['count'])
-cash_agg 		   = pp.get_engineered_features(cash, group_var = 'SK_ID_PREV', df_name = "CASH", num_agg_funcs = ['count', 'min', 'max'], cat_agg_funcs = ['sum'], cols_alias = ['count'])
-
-bureau = pp.read_dataset_csv(filename = "bureau.csv", nrows = None)
-previous_application = pp.read_dataset_csv(filename = "previous_application.csv", nrows = None)
-
-bureau_balance = pp.read_dataset_csv(filename = "bureau_balance.csv", nrows = None)
-cash_balance = pp.read_dataset_csv(filename = "POS_CASH_balance.csv", nrows = None)
-credit_balance = pp.read_dataset_csv(filename = "credit_card_balance.csv", nrows = None)
-
-installments = pp.read_dataset_csv(filename = "installments_payments.csv", nrows = None)
-
-bureau_not_found = set(bureau_balance[bureau_balance.SK_ID_BUREAU.isin(bureau.SK_ID_BUREAU) == False].SK_ID_BUREAU)
-
-bureau_balance = bureau.loc[:, ["SK_ID_BUREAU", "SK_ID_CURR"]].merge(bureau_balance, on = 'SK_ID_BUREAU', how = 'inner')
-
-
-bu_agg = pp.get_engineered_features_2(bureau, group_var = ["SK_ID_CURR"], df_name = "BU")
-pa_agg = pp.get_engineered_features_2(previous_application, group_var = ["SK_ID_CURR"], df_name = "PA")
-
-bb_agg = pp.get_engineered_features_2(bureau_balance, group_var = ["SK_ID_CURR", "SK_ID_BUREAU"], df_name = "BB")
-cb_agg = pp.get_engineered_features_2(cash_balance, group_var = ["SK_ID_CURR", "SK_ID_PREV"], df_name = "CB")
-cc_agg = pp.get_engineered_features_2(credit_balance, group_var = ["SK_ID_CURR", "SK_ID_PREV"], df_name = "CC")
-
-ip_agg = pp.get_engineered_features_2(installments, group_var = ["SK_ID_CURR", "SK_ID_PREV"], df_name = "IP")
-
-del bureau

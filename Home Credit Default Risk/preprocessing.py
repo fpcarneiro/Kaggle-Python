@@ -7,6 +7,7 @@ from scipy.stats import skew, kurtosis
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.preprocessing import LabelEncoder
 
 DATADIR = "input/"
 SUBMISSIONS_DIR = "submissions/"
@@ -350,9 +351,10 @@ def kde_target(var_name, df):
 def get_counts_features(df, group_var, df_name, count_var = None):
     if count_var != None:
         counts = df.groupby(group_var)[count_var].agg('count')
+        counts.name = df_name + '_ROWCOUNT'
     else:
         counts = df.groupby(group_var)[group_var].agg('count')
-    counts.name = df_name + '_ROWCOUNT'
+        counts.columns = [df_name + '_ROWCOUNT']
     return (counts.reset_index())
     
 def get_engineered_features_old(df, group_var, df_name, num_agg_funcs = ['mean', 'max', 'min', 'sum', 'std', 'var'], cat_agg_funcs = ['sum', 'mean'], cols_alias = ['count', 'count_norm']):
@@ -548,7 +550,7 @@ def agg_numeric(df, group_var, df_name, agg_funcs = ['mean', 'median', 'sum'], n
             the statistics (mean, min, max, sum; currently supported) calculated. 
             The columns are also renamed to keep track of features created.
     
-    """
+    """   
     df_copy = df.copy()
     
     # Remove id variables other than grouping variable
@@ -556,7 +558,7 @@ def agg_numeric(df, group_var, df_name, agg_funcs = ['mean', 'median', 'sum'], n
     if len(id_vars) > 0:
         df_copy = df.drop(id_vars, axis = 1)
         
-    if num_columns == None:       
+    if num_columns == None:
         num_columns = list(set(df_copy.select_dtypes(include=['number']).columns) - set(group_var))
             
     numeric_df = df_copy.loc[:, group_var + num_columns]
@@ -653,4 +655,20 @@ def join_low_occurance_categories(df, silent = True, join_category_name = "Other
                 print("Decreasing the number of categories in {}...".format(col))
                 print("The following categories will be grouped: {}".format(s_low_values))
             df_copy.loc[df_copy[col].isin(s_low_values), col] = join_category_name
+    return df_copy
+
+def label_encode(df, silent = True):
+    df_copy = df.copy()
+    
+    cat_cols = get_dtype_columns(df_copy, [np.dtype(object)])
+    cat_cols2encode = [c for c in cat_cols if len(df_copy[c].value_counts(dropna=False)) <= 2]
+    
+    if not silent:
+        print("Label encoding {}".format(cat_cols2encode))
+    
+    le = LabelEncoder()
+    for col in cat_cols2encode:
+        le.fit(df_copy[col])
+        df_copy[col] = le.transform(df[col])
+        
     return df_copy
