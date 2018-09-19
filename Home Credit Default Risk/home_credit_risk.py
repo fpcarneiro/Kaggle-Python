@@ -197,8 +197,9 @@
 import gc
 import feature_selection as fs
 import preprocessing as pp
+from preprocessing import timer
 import load as ld
-from training import kfold_gbt, timer, display_importances
+from training import display_importances, AveragingModels
 from sklearn.preprocessing import Imputer
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.feature_selection import SelectFromModel
@@ -209,13 +210,14 @@ warnings.filterwarnings('ignore')
 
 from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
+from sklearn.ensemble import GradientBoostingClassifier
 
 lgb_params = {}
 lgb_params['nthread'] = 2
 lgb_params['n_estimators'] = 10000
 lgb_params['learning_rate'] = 0.02
 lgb_params['num_leaves'] = 34
-lgb_params['colsample_bytree'] = 0.9497036
+lgb_params['colsample_bytree'] = 0.4385
 lgb_params['subsample'] = 0.8715623
 lgb_params['max_depth'] = 8
 lgb_params["reg_alpha"] = 0.041545473
@@ -225,72 +227,49 @@ lgb_params['min_child_weight'] = 0.0735294
 lgb_params['silent'] = -1
 lgb_params['verbose'] = -1
 
-model_lgb = LGBMClassifier(**lgb_params)
+lgbm = LGBMClassifier(**lgb_params)
 
 xgb_params = dict()
 xgb_params["booster"] = "gbtree"
 xgb_params["objective"] = "binary:logistic"
+xgb_params["n_estimators"] = 10000
 xgb_params["colsample_bytree"] = 0.4385
 xgb_params["subsample"] = 0.7379
 xgb_params["max_depth"] = 3
-xgb_params['reg_alpha'] = 0.1
-xgb_params['reg_lambda'] = 0.1
-xgb_params["learning_rate"] = 0.09
+xgb_params['reg_alpha'] = 0.041545473
+xgb_params['reg_lambda'] = 0.0735294
+xgb_params["learning_rate"] = 0.02
 xgb_params["min_child_weight"] = 2
 
-model_xgb = XGBClassifier(**xgb_params)
+#
+#            nthread=4,
+#            num_leaves=34,
+#            colsample_bytree=0.9497036,
+#            subsample=0.8715623,
+#            max_depth=8,
+#            min_split_gain=0.0222415,
+#            min_child_weight=39.3259775,
+#            silent=-1,
+#            verbose=-1, )
 
-debug_size = 1000
+
+xgb = XGBClassifier(**xgb_params)
+
+# Fit classifier with out-of-bag estimates
+params = {'n_estimators': 1200, 'max_depth': 3, 'subsample': 0.5,
+          'learning_rate': 0.01, 'min_samples_leaf': 1, 'random_state': 3}
+gboost = GradientBoostingClassifier(**params)
+
+tree_models = []
+#tree_models.append(("rforest", model_rforest))
+tree_models.append(("XGBoost", xgb))
+tree_models.append(("LightGBM", lgbm))
+#tree_models.append(("GBoost", gboost))
+
+debug_size = 0
 
 def process_files(debug_size = 0, treat_duplicated = False, select_features_model = False):
-    num_rows = debug_size if debug_size != 0 else None
-    with timer("Process application_train and application_test"):
-        train, test = ld.load_train_test(nrows = num_rows, silent = True)
-        subset_ids = list(train.SK_ID_CURR) + list(test.SK_ID_CURR) if debug_size != 0 else None
-        print("Train df shape:", train.shape)
-        print("Test df shape:", test.shape)
-    with timer("Process Bureau"):
-        bureau_agg = ld.bureau(subset_ids, silent = False)
-        print("Bureau df shape:", bureau_agg.shape)
-        train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
-        test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
-        del bureau_agg
-        gc.collect()
-    with timer("Process Bureau Balance"):
-        bureau_balance_agg = ld.bureau_balance(subset_ids, silent = False)
-        print("Bureau Balance df shape:", bureau_balance_agg.shape)
-        train = train.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
-        test = test.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
-        del bureau_balance_agg
-        gc.collect()
-    with timer("Process previous_applications"):
-        previous_application_agg = ld.previous_application(subset_ids, silent = False)
-        print("Previous applications df shape:", previous_application_agg.shape)
-        train = train.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
-        test = test.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
-        del previous_application_agg
-        gc.collect()
-    with timer("Process POS-CASH balance"):
-        cash_balance_agg = ld.cash_balance(subset_ids, silent = False)
-        print("Cash Balance df shape:", cash_balance_agg.shape)
-        train = train.merge(cash_balance_agg, on = 'SK_ID_CURR', how = 'left')
-        test = test.merge(cash_balance_agg, on = 'SK_ID_CURR', how = 'left')
-        del cash_balance_agg
-        gc.collect()
-    with timer("Process credit card balance"):
-        credit_balance_agg = ld.credit_balance(subset_ids, silent = False)
-        print("Credit Card Balance df shape:", credit_balance_agg.shape)
-        train = train.merge(credit_balance_agg, on = 'SK_ID_CURR', how = 'left')
-        test = test.merge(credit_balance_agg, on = 'SK_ID_CURR', how = 'left')
-        del credit_balance_agg
-        gc.collect()
-    with timer("Process installments payments"):
-        installments_payments_agg = ld.installments_payments(subset_ids, silent = False)
-        print("Installments Payments df shape:", installments_payments_agg.shape)
-        train = train.merge(installments_payments_agg, on = 'SK_ID_CURR', how = 'left')
-        test = test.merge(installments_payments_agg, on = 'SK_ID_CURR', how = 'left')
-        del installments_payments_agg
-        gc.collect()
+    train, test = ld.get_processed_files(debug_size)
     
     train = pp.convert_types(train, print_info = True)
     test = pp.convert_types(test, print_info = True)
@@ -303,11 +282,11 @@ def process_files(debug_size = 0, treat_duplicated = False, select_features_mode
     if select_features_model:
         with timer("Selecting features with model..."): 
             original_num_columns = len(train_X.columns)
-            model = LGBMClassifier(boosting_type='gbdt', n_estimators=1500, objective = 'binary', learning_rate = 0.05, silent = False, subsample = 0.8, colsample_bytree = 0.5)
+            model = LGBMClassifier(boosting_type='gbdt', n_estimators=1500, objective = 'binary', learning_rate = 0.05, silent = False, subsample = 0.5, colsample_bytree = 0.5)
             pipeline = Pipeline([
                      ('imputer', Imputer(strategy='mean', axis=0, verbose=0)),
                      ('scaler', MinMaxScaler(feature_range = (0, 1))),
-                     ('reduce_dim', SelectFromModel(model, threshold = "median")),
+                     ('reduce_dim', SelectFromModel(model, threshold = "mean")),
                      ])
     
             pipeline.fit(train_X, train_y)
@@ -329,20 +308,32 @@ def process_files(debug_size = 0, treat_duplicated = False, select_features_mode
     return train_X, test_X, train_y, ids
 
 if __name__ == "__main__":
-    with timer("Full model run"):
+    with timer("Full Model Run"):
         train_X, test_X, train_y, ids = process_files(debug_size = debug_size, treat_duplicated = False, select_features_model = True)
         
-        features_variance = fs.list_features_low_variance(train_X.fillna(0), train_y, .95)
-        train_X = train_X[features_variance]
-        test_X = test_X[features_variance]
-        with timer("Run LightGBM with kfold"):
-            lgb_cv_score, lgb_pred, feat_importance_lgb = kfold_gbt(model_lgb, train_X, train_y, test_X, num_folds= 5, stratified= False)
-            display_importances(feat_importance_lgb)
-            submit_lgb = pp.submit_file(ids, lgb_pred, prefix_file_name = "lightgbm", cv_score = lgb_cv_score)
-        with timer("Run XGB with kfold"):
-            xgb_cv_score, xgb_pred, feat_importance_xgb = kfold_gbt(model_xgb, train_X, train_y, test_X, num_folds= 5, stratified= False)
-            display_importances(feat_importance_xgb)
-            submit_xgb = pp.submit_file(ids, lgb_pred, prefix_file_name = "xgb", cv_score = xgb_cv_score)
+#        features_variance = fs.list_features_low_variance(train_X.fillna(0), train_y, .95)
+#        train_X = train_X[features_variance]
+#        test_X = test_X[features_variance]
+        
+        for name, m in tree_models:
+        
+            with timer("Run " + name):
+                model = AveragingModels(m)
+                
+                model.fit(train_X, train_y, folds = 5, stratified = False, verbose = 50, early_stopping_rounds = 200)
+                pred = model.predict_proba(test_X)
+                
+                cv_score = model.auc_score
+                feat_importance_lgb = model.importances_df
+                
+                display_importances(feat_importance_lgb)
+                submit_lgb = pp.submit_file(ids, pred, prefix_file_name = name, cv_score = cv_score)
+            
     del test_X, train_X, train_y
     del features_variance
     gc.collect()
+    
+    
+#model = AveragingModels(model_lgb)
+#model.fit(train_X, train_y, folds = 5, stratified = False, verbose = 50, early_stopping_rounds = 200)
+#model.predict_proba(test_X)

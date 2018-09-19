@@ -2,15 +2,23 @@ import numpy as np
 import pandas as pd
 import os
 
-from scipy.stats import skew, kurtosis
+#from scipy.stats import skew, kurtosis
 
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import LabelEncoder
+import time
+from contextlib import contextmanager
 
 DATADIR = "input/"
 SUBMISSIONS_DIR = "submissions/"
+
+@contextmanager
+def timer(title):
+    t0 = time.time()
+    yield
+    print("{} - done in {:.0f}s".format(title, time.time() - t0))
 
 def list_files(input_dir = "input/"):
     return (os.listdir(input_dir))

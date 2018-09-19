@@ -4,6 +4,14 @@ import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 
 import preprocessing as pp
+from preprocessing import timer
+
+def treat_anomalies(df, columns):
+    df_copy = df.copy()
+    for col in columns:
+        df_copy[col + '_ANOM'] = df_copy[col] == 365243
+        df_copy[col].replace(365243, np.nan, inplace= True)
+    return df_copy
 
 def load_train_test(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False):
     train, test = pp.read_train_test(train_file = 'application_train.csv', test_file = 'application_test.csv', nrows = nrows)
@@ -38,11 +46,9 @@ def load_train_test(nrows = None, silent = True, treat_cat_missing = False, trea
             
     #train.loc[:, 'HOUR_APPR_PROCESS_START'] = train.loc[:, 'HOUR_APPR_PROCESS_START'].astype('object')
     #test.loc[:, 'HOUR_APPR_PROCESS_START'] = test.loc[:, 'HOUR_APPR_PROCESS_START'].astype('object')
-    
-    train['DAYS_EMPLOYED_ANOM'] = train["DAYS_EMPLOYED"] == 365243
-    train["DAYS_EMPLOYED"].replace({365243: np.nan}, inplace = True)
-    test['DAYS_EMPLOYED_ANOM'] = test["DAYS_EMPLOYED"] == 365243
-    test["DAYS_EMPLOYED"].replace({365243: np.nan}, inplace = True)
+       
+    train = treat_anomalies(train, columns = ['DAYS_EMPLOYED'])
+    test = treat_anomalies(test, columns = ['DAYS_EMPLOYED'])
     
     cat_cols = pp.get_dtype_columns(train, [np.dtype(object)])
     cat_cols2encode = [c for c in cat_cols if len(train[c].value_counts(dropna=False)) <= 2]
@@ -153,10 +159,13 @@ def previous_application(subset_ids = None, silent = True, treat_cat_missing = F
         
     if not silent:
         print("Deleting columns with high occurance of nulls...")  
-    previous_application.drop(['RATE_INTEREST_PRIMARY', 'RATE_INTEREST_PRIVILEGED', 'DAYS_FIRST_DRAWING'], axis=1, inplace = True)
+    previous_application.drop(['RATE_INTEREST_PRIMARY', 'RATE_INTEREST_PRIVILEGED'], axis=1, inplace = True)
+    #previous_application.drop(['RATE_INTEREST_PRIMARY', 'RATE_INTEREST_PRIVILEGED', 'DAYS_FIRST_DRAWING'], axis=1, inplace = True)
     
     previous_application.NFLAG_INSURED_ON_APPROVAL.fillna(0, inplace= True)
     previous_application.loc[:, 'NFLAG_INSURED_ON_APPROVAL'] = previous_application.loc[:, 'NFLAG_INSURED_ON_APPROVAL'].astype('int32')
+    
+    previous_application['APP_CREDIT_PERC'] = previous_application['AMT_APPLICATION'] / previous_application['AMT_CREDIT']
     
     # Label Encode
     previous_application = pp.label_encode(previous_application, silent)
@@ -165,18 +174,8 @@ def previous_application(subset_ids = None, silent = True, treat_cat_missing = F
     previous_application = pp.join_low_occurance_categories(previous_application, silent, join_category_name = "Other 2")
     
     previous_application.PRODUCT_COMBINATION.fillna("Other 2", inplace= True)
-    
-    previous_application['DAYS_FIRST_DUE_ANOM'] = previous_application["DAYS_FIRST_DUE"] == 365243
-    previous_application['DAYS_FIRST_DUE'].replace(365243, np.nan, inplace= True)
-    
-    previous_application['DAYS_LAST_DUE_1ST_VERSION_ANOM'] = previous_application["DAYS_LAST_DUE_1ST_VERSION"] == 365243
-    previous_application['DAYS_LAST_DUE_1ST_VERSION'].replace(365243, np.nan, inplace= True)
-    
-    previous_application['DAYS_LAST_DUE_ANOM'] = previous_application["DAYS_LAST_DUE"] == 365243
-    previous_application['DAYS_LAST_DUE'].replace(365243, np.nan, inplace= True)
-    
-    previous_application['DAYS_TERMINATION_ANOM'] = previous_application["DAYS_TERMINATION"] == 365243
-    previous_application['DAYS_TERMINATION'].replace(365243, np.nan, inplace= True)
+        
+    previous_application = treat_anomalies(previous_application, columns = ['DAYS_FIRST_DRAWING', 'DAYS_FIRST_DUE', 'DAYS_LAST_DUE_1ST_VERSION', 'DAYS_LAST_DUE', 'DAYS_TERMINATION'])
     
     if (treat_num_missing):
         if not silent:
@@ -293,6 +292,16 @@ def installments_payments(subset_ids = None, silent = True, treat_cat_missing = 
     
     if not silent:
         print("Installment Payments Shape: {}".format(installments.shape))
+    
+    # Percentage and difference paid in each installment (amount paid and installment value)
+    installments['PAYMENT_PERC'] = installments['AMT_PAYMENT'] / installments['AMT_INSTALMENT']
+    installments['PAYMENT_DIFF'] = installments['AMT_INSTALMENT'] - installments['AMT_PAYMENT']
+    
+    # Days past due and days before due (no negative values)
+    installments['DPD'] = installments['DAYS_ENTRY_PAYMENT'] - installments['DAYS_INSTALMENT']
+    installments['DBD'] = installments['DAYS_INSTALMENT'] - installments['DAYS_ENTRY_PAYMENT']
+    installments['DPD'] = installments['DPD'].apply(lambda x: x if x > 0 else 0)
+    installments['DBD'] = installments['DBD'].apply(lambda x: x if x > 0 else 0)
         
     # Decrease number of categories   
     installments = pp.join_low_occurance_categories(installments, silent, join_category_name = "Other 2")
@@ -306,3 +315,54 @@ def installments_payments(subset_ids = None, silent = True, treat_cat_missing = 
     ip_agg_client = pp.agg_numeric(ip_agg, [group_vars[0]], df_name)
     
     return ip_agg_client
+
+def get_processed_files(debug_size = 0, silent = True):
+    num_rows = debug_size if debug_size != 0 else None
+    with timer("Process application_train and application_test"):
+        train, test = load_train_test(nrows = num_rows, silent = silent)
+        subset_ids = list(train.SK_ID_CURR) + list(test.SK_ID_CURR) if debug_size != 0 else None
+        print("Train df shape:", train.shape)
+        print("Test df shape:", test.shape)
+    with timer("Process Bureau"):
+        bureau_agg = bureau(subset_ids, silent = silent)
+        print("Bureau df shape:", bureau_agg.shape)
+        train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
+        test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
+        del bureau_agg
+        gc.collect()
+    with timer("Process Bureau Balance"):
+        bureau_balance_agg = bureau_balance(subset_ids, silent = silent)
+        print("Bureau Balance df shape:", bureau_balance_agg.shape)
+        train = train.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
+        test = test.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
+        del bureau_balance_agg
+        gc.collect()
+    with timer("Process previous_applications"):
+        previous_application_agg = previous_application(subset_ids, silent = silent)
+        print("Previous applications df shape:", previous_application_agg.shape)
+        train = train.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
+        test = test.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
+        del previous_application_agg
+        gc.collect()
+    with timer("Process POS-CASH balance"):
+        cash_balance_agg = cash_balance(subset_ids, silent = silent)
+        print("Cash Balance df shape:", cash_balance_agg.shape)
+        train = train.merge(cash_balance_agg, on = 'SK_ID_CURR', how = 'left')
+        test = test.merge(cash_balance_agg, on = 'SK_ID_CURR', how = 'left')
+        del cash_balance_agg
+        gc.collect()
+    with timer("Process credit card balance"):
+        credit_balance_agg = credit_balance(subset_ids, silent = silent)
+        print("Credit Card Balance df shape:", credit_balance_agg.shape)
+        train = train.merge(credit_balance_agg, on = 'SK_ID_CURR', how = 'left')
+        test = test.merge(credit_balance_agg, on = 'SK_ID_CURR', how = 'left')
+        del credit_balance_agg
+        gc.collect()
+    with timer("Process installments payments"):
+        installments_payments_agg = installments_payments(subset_ids, silent = silent)
+        print("Installments Payments df shape:", installments_payments_agg.shape)
+        train = train.merge(installments_payments_agg, on = 'SK_ID_CURR', how = 'left')
+        test = test.merge(installments_payments_agg, on = 'SK_ID_CURR', how = 'left')
+        del installments_payments_agg
+        gc.collect()
+    return train, test
