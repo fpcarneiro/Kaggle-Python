@@ -21,11 +21,11 @@ def display_importances(feature_importance_df_, how_many = 40):
     plt.tight_layout()
     plt.savefig('lgbm_importances01.png')
     
-def get_folds(num_folds, stratified = False):
+def get_folds(num_folds, stratified = False, seed = 1001):
     if stratified:
-        folds = StratifiedKFold(n_splits= num_folds, shuffle=True, random_state=1001)
+        folds = StratifiedKFold(n_splits= num_folds, shuffle=True, random_state=seed)
     else:
-        folds = KFold(n_splits= num_folds, shuffle=True, random_state=1001)
+        folds = KFold(n_splits= num_folds, shuffle=True, random_state=seed)
     return folds
     
 class AveragingModels(BaseEstimator, RegressorMixin, TransformerMixin):

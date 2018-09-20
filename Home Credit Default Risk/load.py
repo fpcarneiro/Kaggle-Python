@@ -6,6 +6,8 @@ from sklearn.preprocessing import LabelEncoder
 import preprocessing as pp
 from preprocessing import timer
 
+numeric_agg_funcs = ['mean', 'median', 'sum']
+
 def treat_anomalies(df, columns):
     df_copy = df.copy()
     for col in columns:
@@ -13,7 +15,7 @@ def treat_anomalies(df, columns):
         df_copy[col].replace(365243, np.nan, inplace= True)
     return df_copy
 
-def load_train_test(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False):
+def load_train_test(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False):
     train, test = pp.read_train_test(train_file = 'application_train.csv', test_file = 'application_test.csv', nrows = nrows)
     
     train = train[train['CODE_GENDER'] != 'XNA']
@@ -93,22 +95,18 @@ def load_train_test(nrows = None, silent = True, treat_cat_missing = False, trea
         train = num_missing_trans.fit_transform(train)
         test = num_missing_trans.fit_transform(test)
     
-    if not silent:
-        print("Converting columns types to reduce datasets size...")
-    train = pp.convert_types(train, print_info = not silent)
-    test = pp.convert_types(test, print_info = not silent)
-    
     # FEATURE ENGINEERING
     if not silent:
         print("Feature engineering...")
     train = pp.get_domain_knowledge_features(train)
     test = pp.get_domain_knowledge_features(test)
     
-    duplicated_train = pp.duplicate_columns(train, verbose = not silent, progress = False)
-    if not silent:
-        print("Removing duplicated columns {}".format(duplicated_train))
-    train.drop(list(duplicated_train.keys()), axis=1, inplace = True)
-    test.drop(list(duplicated_train.keys()), axis=1, inplace = True)
+    if remove_duplicated_cols:
+        duplicated_train = pp.duplicate_columns(train, verbose = not silent, progress = False)
+        if not silent:
+            print("Removing duplicated columns {}".format(duplicated_train))
+        train.drop(list(duplicated_train.keys()), axis=1, inplace = True)
+        test.drop(list(duplicated_train.keys()), axis=1, inplace = True)
     
     return train, test
 
@@ -140,7 +138,7 @@ def bureau(subset_ids = None, silent = True, treat_cat_missing = False, treat_nu
     if not silent:
         print("Aggregating BUREAU by only 'SK_ID_CURR'...")
     counts = pp.get_counts_features(bureau, group_var, df_name + "2")
-    bu_agg_2 = pp.get_engineered_features(bureau, group_var, df_name + "2")
+    bu_agg_2 = pp.get_engineered_features(bureau, group_var, df_name + "2", num_agg_funcs = numeric_agg_funcs)
     
     bu_agg_2 = counts.merge(bu_agg_2, on = group_var[0], how = 'left')
 
@@ -195,7 +193,7 @@ def previous_application(subset_ids = None, silent = True, treat_cat_missing = F
     if not silent:
         print("Aggregating PREVIOUS APPLICATION by only 'SK_ID_CURR'...")
     counts = pp.get_counts_features(previous_application, group_var, df_name + "2")
-    pa_agg_2 = pp.get_engineered_features(previous_application, group_var, df_name + "2")
+    pa_agg_2 = pp.get_engineered_features(previous_application, group_var, df_name + "2", num_agg_funcs = numeric_agg_funcs)
         
     pa_agg_2 = counts.merge(pa_agg_2, on = group_var[0], how = 'left')
     
@@ -222,7 +220,7 @@ def bureau_balance(subset_ids = None, silent = True, treat_cat_missing = False, 
     
     df_name_temp = ""
     counts_bb = pp.get_counts_features(bureau_balance, group_vars, df_name_temp, group_vars[1])
-    bb_agg = pp.get_engineered_features(bureau_balance, group_vars, df_name_temp)
+    bb_agg = pp.get_engineered_features(bureau_balance, group_vars, df_name_temp, num_agg_funcs = numeric_agg_funcs)
     cols_status = [c for c in bb_agg.columns if c.endswith("_COUNT") and c.find("_STATUS_") != -1 and c not in [df_name_temp + "_STATUS_X_COUNT", df_name_temp + "_STATUS_C_COUNT", df_name_temp + "_STATUS_0_COUNT"]]
     
     bb_agg = counts_bb.merge(bb_agg, on = group_vars, how = 'left')
@@ -250,7 +248,7 @@ def cash_balance(subset_ids = None, silent = True, treat_cat_missing = False, tr
 
     df_name_temp = ""
     counts_cb = pp.get_counts_features(cash_balance, group_vars, df_name_temp, group_vars[1])
-    cb_agg = pp.get_engineered_features(cash_balance, group_vars, df_name_temp)
+    cb_agg = pp.get_engineered_features(cash_balance, group_vars, df_name_temp, num_agg_funcs = numeric_agg_funcs)
 
     cb_agg = counts_cb.merge(cb_agg, on = group_vars, how = 'left')
     
@@ -274,7 +272,7 @@ def credit_balance(subset_ids = None, silent = True, treat_cat_missing = False, 
 
     df_name_temp = ""
     counts_ccb = pp.get_counts_features(credit_balance, group_vars, df_name_temp, group_vars[1])
-    ccb_agg = pp.get_engineered_features(credit_balance, group_vars, df_name_temp)
+    ccb_agg = pp.get_engineered_features(credit_balance, group_vars, df_name_temp, num_agg_funcs = numeric_agg_funcs)
 
     ccb_agg = counts_ccb.merge(ccb_agg, on = group_vars, how = 'left')
     
@@ -308,7 +306,7 @@ def installments_payments(subset_ids = None, silent = True, treat_cat_missing = 
 
     df_name_temp = ""
     counts_ip = pp.get_counts_features(installments, group_vars, df_name_temp, group_vars[1])
-    ip_agg = pp.get_engineered_features(installments, group_vars, df_name_temp)
+    ip_agg = pp.get_engineered_features(installments, group_vars, df_name_temp, num_agg_funcs = numeric_agg_funcs)
 
     ip_agg = counts_ip.merge(ip_agg, on = group_vars, how = 'left')
     
@@ -316,51 +314,58 @@ def installments_payments(subset_ids = None, silent = True, treat_cat_missing = 
     
     return ip_agg_client
 
-def get_processed_files(debug_size = 0, silent = True):
+def get_processed_files(debug_size, silent = True):
     num_rows = debug_size if debug_size != 0 else None
     with timer("Process application_train and application_test"):
         train, test = load_train_test(nrows = num_rows, silent = silent)
         subset_ids = list(train.SK_ID_CURR) + list(test.SK_ID_CURR) if debug_size != 0 else None
-        print("Train df shape:", train.shape)
-        print("Test df shape:", test.shape)
+        if silent == False:
+            print("Train df shape:", train.shape)
+            print("Test df shape:", test.shape)
     with timer("Process Bureau"):
         bureau_agg = bureau(subset_ids, silent = silent)
-        print("Bureau df shape:", bureau_agg.shape)
+        if silent == False:
+           print("Bureau df shape:", bureau_agg.shape)
         train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
         test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
         del bureau_agg
         gc.collect()
     with timer("Process Bureau Balance"):
         bureau_balance_agg = bureau_balance(subset_ids, silent = silent)
-        print("Bureau Balance df shape:", bureau_balance_agg.shape)
+        if silent == False:
+           print("Bureau Balance df shape:", bureau_balance_agg.shape)
         train = train.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
         test = test.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
         del bureau_balance_agg
         gc.collect()
     with timer("Process previous_applications"):
         previous_application_agg = previous_application(subset_ids, silent = silent)
-        print("Previous applications df shape:", previous_application_agg.shape)
+        if silent == False:
+           print("Previous applications df shape:", previous_application_agg.shape)
         train = train.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
         test = test.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
         del previous_application_agg
         gc.collect()
     with timer("Process POS-CASH balance"):
         cash_balance_agg = cash_balance(subset_ids, silent = silent)
-        print("Cash Balance df shape:", cash_balance_agg.shape)
+        if silent == False:
+           print("Cash Balance df shape:", cash_balance_agg.shape)
         train = train.merge(cash_balance_agg, on = 'SK_ID_CURR', how = 'left')
         test = test.merge(cash_balance_agg, on = 'SK_ID_CURR', how = 'left')
         del cash_balance_agg
         gc.collect()
     with timer("Process credit card balance"):
         credit_balance_agg = credit_balance(subset_ids, silent = silent)
-        print("Credit Card Balance df shape:", credit_balance_agg.shape)
+        if silent == False:
+           print("Credit Card Balance df shape:", credit_balance_agg.shape)
         train = train.merge(credit_balance_agg, on = 'SK_ID_CURR', how = 'left')
         test = test.merge(credit_balance_agg, on = 'SK_ID_CURR', how = 'left')
         del credit_balance_agg
         gc.collect()
     with timer("Process installments payments"):
         installments_payments_agg = installments_payments(subset_ids, silent = silent)
-        print("Installments Payments df shape:", installments_payments_agg.shape)
+        if silent == False:
+           print("Installments Payments df shape:", installments_payments_agg.shape)
         train = train.merge(installments_payments_agg, on = 'SK_ID_CURR', how = 'left')
         test = test.merge(installments_payments_agg, on = 'SK_ID_CURR', how = 'left')
         del installments_payments_agg

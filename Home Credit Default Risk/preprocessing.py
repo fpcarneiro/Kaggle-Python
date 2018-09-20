@@ -16,9 +16,12 @@ SUBMISSIONS_DIR = "submissions/"
 
 @contextmanager
 def timer(title):
+    print("{} - Start!".format(title))
     t0 = time.time()
     yield
-    print("{} - done in {:.0f}s".format(title, time.time() - t0))
+    print("{} - Done in {:.0f}s".format(title, time.time() - t0))
+    print("")
+    
 
 def list_files(input_dir = "input/"):
     return (os.listdir(input_dir))
