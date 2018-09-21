@@ -322,52 +322,52 @@ def get_processed_files(debug_size, silent = True):
         if silent == False:
             print("Train df shape:", train.shape)
             print("Test df shape:", test.shape)
-    with timer("Process Bureau"):
-        bureau_agg = bureau(subset_ids, silent = silent)
-        if silent == False:
-           print("Bureau df shape:", bureau_agg.shape)
-        train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
-        test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
-        del bureau_agg
-        gc.collect()
-    with timer("Process Bureau Balance"):
-        bureau_balance_agg = bureau_balance(subset_ids, silent = silent)
-        if silent == False:
-           print("Bureau Balance df shape:", bureau_balance_agg.shape)
-        train = train.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
-        test = test.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
-        del bureau_balance_agg
-        gc.collect()
-    with timer("Process previous_applications"):
-        previous_application_agg = previous_application(subset_ids, silent = silent)
-        if silent == False:
-           print("Previous applications df shape:", previous_application_agg.shape)
-        train = train.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
-        test = test.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
-        del previous_application_agg
-        gc.collect()
-    with timer("Process POS-CASH balance"):
-        cash_balance_agg = cash_balance(subset_ids, silent = silent)
-        if silent == False:
-           print("Cash Balance df shape:", cash_balance_agg.shape)
-        train = train.merge(cash_balance_agg, on = 'SK_ID_CURR', how = 'left')
-        test = test.merge(cash_balance_agg, on = 'SK_ID_CURR', how = 'left')
-        del cash_balance_agg
-        gc.collect()
-    with timer("Process credit card balance"):
-        credit_balance_agg = credit_balance(subset_ids, silent = silent)
-        if silent == False:
-           print("Credit Card Balance df shape:", credit_balance_agg.shape)
-        train = train.merge(credit_balance_agg, on = 'SK_ID_CURR', how = 'left')
-        test = test.merge(credit_balance_agg, on = 'SK_ID_CURR', how = 'left')
-        del credit_balance_agg
-        gc.collect()
-    with timer("Process installments payments"):
-        installments_payments_agg = installments_payments(subset_ids, silent = silent)
-        if silent == False:
-           print("Installments Payments df shape:", installments_payments_agg.shape)
-        train = train.merge(installments_payments_agg, on = 'SK_ID_CURR', how = 'left')
-        test = test.merge(installments_payments_agg, on = 'SK_ID_CURR', how = 'left')
-        del installments_payments_agg
-        gc.collect()
+#    with timer("Process Bureau"):
+#        bureau_agg = bureau(subset_ids, silent = silent)
+#        if silent == False:
+#           print("Bureau df shape:", bureau_agg.shape)
+#        train = train.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
+#        test = test.merge(bureau_agg, on = 'SK_ID_CURR', how = 'left')
+#        del bureau_agg
+#        gc.collect()
+#    with timer("Process Bureau Balance"):
+#        bureau_balance_agg = bureau_balance(subset_ids, silent = silent)
+#        if silent == False:
+#           print("Bureau Balance df shape:", bureau_balance_agg.shape)
+#        train = train.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
+#        test = test.merge(bureau_balance_agg, on = 'SK_ID_CURR', how = 'left')
+#        del bureau_balance_agg
+#        gc.collect()
+#    with timer("Process previous_applications"):
+#        previous_application_agg = previous_application(subset_ids, silent = silent)
+#        if silent == False:
+#           print("Previous applications df shape:", previous_application_agg.shape)
+#        train = train.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
+#        test = test.merge(previous_application_agg, on = 'SK_ID_CURR', how = 'left')
+#        del previous_application_agg
+#        gc.collect()
+#    with timer("Process POS-CASH balance"):
+#        cash_balance_agg = cash_balance(subset_ids, silent = silent)
+#        if silent == False:
+#           print("Cash Balance df shape:", cash_balance_agg.shape)
+#        train = train.merge(cash_balance_agg, on = 'SK_ID_CURR', how = 'left')
+#        test = test.merge(cash_balance_agg, on = 'SK_ID_CURR', how = 'left')
+#        del cash_balance_agg
+#        gc.collect()
+#    with timer("Process credit card balance"):
+#        credit_balance_agg = credit_balance(subset_ids, silent = silent)
+#        if silent == False:
+#           print("Credit Card Balance df shape:", credit_balance_agg.shape)
+#        train = train.merge(credit_balance_agg, on = 'SK_ID_CURR', how = 'left')
+#        test = test.merge(credit_balance_agg, on = 'SK_ID_CURR', how = 'left')
+#        del credit_balance_agg
+#        gc.collect()
+#    with timer("Process installments payments"):
+#        installments_payments_agg = installments_payments(subset_ids, silent = silent)
+#        if silent == False:
+#           print("Installments Payments df shape:", installments_payments_agg.shape)
+#        train = train.merge(installments_payments_agg, on = 'SK_ID_CURR', how = 'left')
+#        test = test.merge(installments_payments_agg, on = 'SK_ID_CURR', how = 'left')
+#        del installments_payments_agg
+#        gc.collect()
     return train, test

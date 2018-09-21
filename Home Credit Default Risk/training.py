@@ -21,6 +21,19 @@ def display_importances(feature_importance_df_, how_many = 40):
     plt.tight_layout()
     plt.savefig('lgbm_importances01.png')
     
+def save_importances(features, importances, fold = -1, sort = False, drop_importance_zero = False):
+    importance_record = pd.DataFrame()
+    importance_record["FEATURE"] = features
+    importance_record["IMPORTANCE"] = importances
+    if fold != -1:
+        importance_record["FOLD"] = fold
+    if sort:
+        importance_record.sort_values(by = "IMPORTANCE", ascending=False, inplace = True)
+    if drop_importance_zero:
+        importance_record = importance_record[importance_record.IMPORTANCE != 0]
+    
+    return importance_record
+    
 def get_folds(num_folds, stratified = False, seed = 1001):
     if stratified:
         folds = StratifiedKFold(n_splits= num_folds, shuffle=True, random_state=seed)
@@ -46,16 +59,17 @@ class AveragingModels(BaseEstimator, RegressorMixin, TransformerMixin):
         for n_fold, (train_idx, valid_idx) in enumerate(folds.split(X[self.feats], y)):
             train_x, train_y = X[self.feats].iloc[train_idx], y[train_idx]
             valid_x, valid_y = X[self.feats].iloc[valid_idx], y[valid_idx]
-        
+            
             self.models_[n_fold].fit(train_x, train_y, eval_set=[(train_x, train_y), (valid_x, valid_y)], 
             eval_metric= 'auc', verbose = verbose, early_stopping_rounds = early_stopping_rounds)
             
             self.oof_preds[valid_idx] = self.models_[n_fold].predict_proba(valid_x)[:, 1]
             
-            fold_importance_df = pd.DataFrame()
-            fold_importance_df["feature"] = self.feats
-            fold_importance_df["importance"] = self.models_[n_fold].feature_importances_
-            fold_importance_df["fold"] = n_fold + 1
+            fold_importance_df = save_importances(self.feats, self.models_[n_fold].feature_importances_, fold = n_fold + 1)
+            #fold_importance_df = pd.DataFrame()
+            #fold_importance_df["feature"] = self.feats
+            #fold_importance_df["importance"] = self.models_[n_fold].feature_importances_
+            #fold_importance_df["fold"] = n_fold + 1
             
             self.importances_df = pd.concat([self.importances_df, fold_importance_df], axis=0)
             print('Fold %2d AUC : %.6f' % (n_fold + 1, roc_auc_score(valid_y, self.oof_preds[valid_idx])))

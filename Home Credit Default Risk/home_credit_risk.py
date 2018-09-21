@@ -199,7 +199,7 @@ import feature_selection as fs
 import preprocessing as pp
 from preprocessing import timer
 import load as ld
-from training import display_importances, get_folds, AveragingModels
+from training import display_importances, get_folds, save_importances, AveragingModels
 from sklearn.preprocessing import Imputer
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.feature_selection import SelectFromModel
@@ -211,6 +211,9 @@ warnings.filterwarnings('ignore')
 from lightgbm import LGBMClassifier, Dataset, cv, train
 from xgboost import XGBClassifier
 from sklearn.ensemble import GradientBoostingClassifier
+
+import eli5
+from eli5.sklearn import PermutationImportance
 
 def get_tree_models():
     lgb_params = {}
@@ -227,8 +230,6 @@ def get_tree_models():
     lgb_params['min_child_weight'] = 0.0735294
     lgb_params['silent'] = False
     
-    lgbm = LGBMClassifier(**lgb_params)
-    
     xgb_params = dict()
     xgb_params["booster"] = "gbtree"
     xgb_params["objective"] = "binary:logistic"
@@ -241,22 +242,19 @@ def get_tree_models():
     xgb_params["learning_rate"] = 0.02
     xgb_params["min_child_weight"] = 2
     xgb_params['silent'] = False
-    
-    xgb = XGBClassifier(**xgb_params)
-    
-    # Fit classifier with out-of-bag estimates
-    params = {'n_estimators': 1200, 'max_depth': 3, 'subsample': 0.5,
-              'learning_rate': 0.01, 'min_samples_leaf': 1, 'random_state': 3}
-    gboost = GradientBoostingClassifier(**params)
-    
+
     tree_models = []
-    #tree_models.append(("rforest", model_rforest))
-    tree_models.append(("LightGBM", lgbm))
-    tree_models.append(("XGBoost", xgb))
-    #tree_models.append(("GBoost", gboost))
+    for seed in [2017]:
+        lgb_params['seed'] = seed
+        xgb_params['seed'] = seed
+        
+        lgbm = LGBMClassifier(**lgb_params)
+        xgb = XGBClassifier(**xgb_params)
+        tree_models.append(("LightGBM_" + str(seed), lgbm))
+        tree_models.append(("XGBoost_" + str(seed), xgb))
     return tree_models
 
-def get_importances(X, y, features):
+def get_importances_from_model(X, y, features = None):
      
     lgb_params = {}
     lgb_params['boosting_type'] = 'gbdt'
@@ -264,8 +262,9 @@ def get_importances(X, y, features):
     lgb_params['learning_rate'] = 0.02
     lgb_params['metric'] = 'auc'
 #    lgb_params['num_leaves'] = 34
-#    lgb_params['colsample_bytree'] = 0.5
-#    lgb_params['subsample'] = 0.7379
+    lgb_params['colsample_bytree'] = 0.75
+    lgb_params['subsample'] = 0.75
+    lgb_params['n_estimators'] = 1500
 #    lgb_params['max_depth'] = 8
 #    lgb_params["reg_alpha"] = 0.041545473
 #    lgb_params['reg_lambda'] = 0.0735294
@@ -273,45 +272,29 @@ def get_importances(X, y, features):
 #    lgb_params['min_child_weight'] = 0.0735294
 #    lgb_params['silent'] = False
     
-    folds = get_folds(num_folds = 5, stratified = False)
+    if features == None:
+        features = X.columns.tolist()
     
-    for n_fold, (train_idx, valid_idx) in enumerate(folds.split(X, y)):
+    lgb_train = Dataset(data = X, label = y, feature_name = features)
         
-        train_x, train_y = X.iloc[train_idx], y[train_idx]
-        valid_x, valid_y = X.iloc[valid_idx], y[valid_idx]
-        
-        lgb_train = Dataset(data = train_x, label = train_y, feature_name = features)
-        lgb_val = Dataset(data = valid_x, label = valid_y, feature_name = features)
-        
-        booster = train(params = lgb_params, train_set = lgb_train, valid_sets = [lgb_val], valid_names = ["validation"], 
-            verbose_eval = 50, early_stopping_rounds = 200, num_boost_round = 10000)
-        
-#        lgb_booster = train(params = lgb_grid.best_params_, train_set = lgb_train, num_boost_round = 830)
-    
-    
-    print(" _________  ")
-    
-    print("")
-#    # Params to test later: stratified, shuffle, 
-    lgb_train_full = Dataset(data = X, label = y, feature_name = features)
-    
-    lgb_results = cv(train_set = lgb_train_full, params = lgb_params, num_boost_round = 10000, folds = folds.split(X, y),
-           metrics='auc', early_stopping_rounds = 200, verbose_eval = 50)
-    
-    folds = get_folds(num_folds = 5, stratified = False, seed = 2018)
-    
-    lgb_results = cv(train_set = lgb_train_full, params = lgb_params, num_boost_round = 10000, folds = folds.split(X, y),
-           metrics='auc', early_stopping_rounds = 200, verbose_eval = 50)
-    
-    return lgb_results
+    lgb_booster = train(params = lgb_params, train_set = lgb_train, verbose_eval = 50, num_boost_round = 1500)
 
-def get_datasets(debug_size, silent):
+    return lgb_booster
+
+def get_datasets(debug_size, silent, treat_duplicated = True):
     train, test = ld.get_processed_files(debug_size, silent)
     
     train = pp.convert_types(train, print_info = not silent)
     test = pp.convert_types(test, print_info = not silent)
     
     features = [f for f in train.columns if f not in ['TARGET', 'SK_ID_CURR', 'SK_ID_BUREAU', 'SK_ID_PREV', 'index']]
+    
+    if treat_duplicated:
+        with timer("Treating Duplicated"):
+            duplicated = pp.duplicate_columns(train, verbose = True, progress = False)
+            if len(duplicated) > 0:
+                train.drop(list(duplicated.keys()), axis=1, inplace = True)
+                test.drop(list(duplicated.keys()), axis=1, inplace = True)
     
     train_y = train['TARGET']
     train_X = train.loc[:, features]
@@ -321,39 +304,8 @@ def get_datasets(debug_size, silent):
     
     return train_X, train_y, test_X, ids
 
-def process_files(debug_size, silent, remove_duplicated_cols = False, select_features_model = False):
-    train_X, test_X, train_y, ids = get_datasets(debug_size = debug_size, silent = silent)
-    
-    if select_features_model:
-        with timer("Selecting features with model..."): 
-            original_num_columns = len(train_X.columns)
-            model = LGBMClassifier(boosting_type='gbdt', n_estimators=1500, objective = 'binary', learning_rate = 0.05, silent = False, subsample = 0.5, colsample_bytree = 0.5)
-            pipeline = Pipeline([
-                     ('imputer', Imputer(strategy='mean', axis=0, verbose=0)),
-                     ('scaler', MinMaxScaler(feature_range = (0, 1))),
-                     ('reduce_dim', SelectFromModel(model, threshold = "mean")),
-                     ])
-    
-            pipeline.fit(train_X, train_y)
-
-            features_select_from_model = list(train_X.loc[:, pipeline.named_steps['reduce_dim'].get_support()].columns)
-            print("Models will be trained with {} out of {} features.".format(len(features_select_from_model), original_num_columns))
-
-            #train = pipeline.transform(train_X)
-            #test = pipeline.transform(test_X)
-            train_X = train_X.loc[:, list(features_select_from_model)]
-            test_X = test_X.loc[:, list(features_select_from_model)]
-            
-    if treat_duplicated:
-        with timer("Treating duplicated"):
-            duplicated = pp.duplicate_columns(train, verbose = True, progress = False)
-            if len(duplicated) > 0:
-                train.drop(list(duplicated.keys()), axis=1, inplace = True)
-                test.drop(list(duplicated.keys()), axis=1, inplace = True)
-    return train_X, test_X, train_y, ids
-
 if __name__ == "__main__":
-    debug_size = 1000
+    debug_size = 0
     silent = True
     verbose = 0
     early_stopping_rounds = 200
@@ -362,30 +314,34 @@ if __name__ == "__main__":
         
         train_X, train_y, test_X, ids = get_datasets(debug_size = debug_size, silent = silent)
         
-        #imp = get_importances(train_X, train_y, train_X.columns.tolist())
+        lgb_booster = get_importances_from_model(train_X, train_y, train_X.columns.tolist())
+        
+        importances_booster = save_importances(train_X.columns.tolist(), lgb_booster.feature_importance(), sort= True, drop_importance_zero = True)
+        
+        feats = importances_booster.FEATURE.tolist()
         
         for name, m in get_tree_models():
         
             with timer("Run " + name):
-                model = AveragingModels(m)
                 
-                model.fit(train_X, train_y, folds = 5, stratified = False, verbose = verbose, early_stopping_rounds = early_stopping_rounds)
-                pred = model.predict_proba(test_X)
+                for i in range(50,201,50):
+                    
+                    model = AveragingModels(m)
+                    
+                    print(feats[:i])
                 
-                cv_score = model.auc_score
-                feat_importance = model.importances_df
-                
-                #display_importances(feat_importance)
-                submission = pp.submit_file(ids, pred, prefix_file_name = name, cv_score = cv_score)
-                
-                del model, pred, cv_score, feat_importance, submission
-                gc.collect()
+                    model.fit(train_X.loc[:, feats[:i]], train_y, folds = 5, stratified = False, verbose = verbose, early_stopping_rounds = early_stopping_rounds)
+                    pred = model.predict_proba(test_X.loc[:, feats[:i]])
+                    
+                    cv_score = model.auc_score
+                    feat_importance = model.importances_df
+                    
+                    #display_importances(feat_importance)
+                    submission = pp.submit_file(ids, pred, prefix_file_name = name, cv_score = cv_score)
+                    
+                    del model, pred, cv_score, feat_importance, submission
+                    gc.collect()
             
     del test_X, train_X, train_y
     del features_variance
     gc.collect()
-    
-    
-#model = AveragingModels(model_lgb)
-#model.fit(train_X, train_y, folds = 5, stratified = False, verbose = 50, early_stopping_rounds = 200)
-#model.predict_proba(test_X)
