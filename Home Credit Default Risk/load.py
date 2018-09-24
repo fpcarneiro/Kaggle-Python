@@ -18,7 +18,10 @@ def treat_anomalies(df, columns):
 def load_train_test(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False):
     train, test = pp.read_train_test(train_file = 'application_train.csv', test_file = 'application_test.csv', nrows = nrows)
     
+    # Remove some rows with values not present in test set
     train = train[train['CODE_GENDER'] != 'XNA']
+    train = train[train['NAME_INCOME_TYPE'] != 'Maternity leave']
+    train = train[train['NAME_FAMILY_STATUS'] != 'Unknown']
     
     if not silent:
         print("Train samples: {}, Test samples: {}".format(len(train), len(test)))
@@ -46,11 +49,26 @@ def load_train_test(nrows = None, silent = True, treat_cat_missing = False, trea
             train.loc[train[col].isin(l_union), col] = "Other 2"
             test.loc[test[col].isin(l_union), col] = "Other 2"
             
-    #train.loc[:, 'HOUR_APPR_PROCESS_START'] = train.loc[:, 'HOUR_APPR_PROCESS_START'].astype('object')
-    #test.loc[:, 'HOUR_APPR_PROCESS_START'] = test.loc[:, 'HOUR_APPR_PROCESS_START'].astype('object')
+    train.loc[:, 'HOUR_APPR_PROCESS_START'] = train.loc[:, 'HOUR_APPR_PROCESS_START'].astype('object')
+    test.loc[:, 'HOUR_APPR_PROCESS_START'] = test.loc[:, 'HOUR_APPR_PROCESS_START'].astype('object')
        
     train = treat_anomalies(train, columns = ['DAYS_EMPLOYED'])
     test = treat_anomalies(test, columns = ['DAYS_EMPLOYED'])
+    
+    train.loc[train['OWN_CAR_AGE'] > 80, 'OWN_CAR_AGE'] = np.nan
+    train.loc[train['REGION_RATING_CLIENT_W_CITY'] < 0, 'REGION_RATING_CLIENT_W_CITY'] = np.nan
+    train.loc[train['AMT_INCOME_TOTAL'] > 1e8, 'AMT_INCOME_TOTAL'] = np.nan
+    train.loc[train['AMT_REQ_CREDIT_BUREAU_QRT'] > 10, 'AMT_REQ_CREDIT_BUREAU_QRT'] = np.nan
+    train.loc[train['OBS_30_CNT_SOCIAL_CIRCLE'] > 40, 'OBS_30_CNT_SOCIAL_CIRCLE'] = np.nan
+    
+    test.loc[test['OWN_CAR_AGE'] > 80, 'OWN_CAR_AGE'] = np.nan
+    test.loc[test['REGION_RATING_CLIENT_W_CITY'] < 0, 'REGION_RATING_CLIENT_W_CITY'] = np.nan
+    test.loc[test['AMT_INCOME_TOTAL'] > 1e8, 'AMT_INCOME_TOTAL'] = np.nan
+    test.loc[test['AMT_REQ_CREDIT_BUREAU_QRT'] > 10, 'AMT_REQ_CREDIT_BUREAU_QRT'] = np.nan
+    test.loc[test['OBS_30_CNT_SOCIAL_CIRCLE'] > 40, 'OBS_30_CNT_SOCIAL_CIRCLE'] = np.nan
+    
+    train['COUNT_MISSING'] = train.isnull().sum(axis = 1).values
+    test['COUNT_MISSING'] = test.isnull().sum(axis = 1).values
     
     cat_cols = pp.get_dtype_columns(train, [np.dtype(object)])
     cat_cols2encode = [c for c in cat_cols if len(train[c].value_counts(dropna=False)) <= 2]
@@ -78,8 +96,8 @@ def load_train_test(nrows = None, silent = True, treat_cat_missing = False, trea
     
     if not silent:
         print("Creating dummies variables...")
-    train = pd.get_dummies(train, dummy_na = True)
-    test = pd.get_dummies(test, dummy_na = True)
+    train = pd.get_dummies(train, dummy_na = treat_cat_missing)
+    test = pd.get_dummies(test, dummy_na = treat_cat_missing)
     
     train_labels = train['TARGET']
     train, test = train.align(test, join = 'inner', axis = 1)
@@ -317,7 +335,7 @@ def installments_payments(subset_ids = None, silent = True, treat_cat_missing = 
 def get_processed_files(debug_size, silent = True):
     num_rows = debug_size if debug_size != 0 else None
     with timer("Process application_train and application_test"):
-        train, test = load_train_test(nrows = num_rows, silent = silent)
+        train, test = load_train_test(nrows = num_rows, silent = silent, treat_cat_missing = True, treat_num_missing = True)
         subset_ids = list(train.SK_ID_CURR) + list(test.SK_ID_CURR) if debug_size != 0 else None
         if silent == False:
             print("Train df shape:", train.shape)
@@ -370,4 +388,4 @@ def get_processed_files(debug_size, silent = True):
 #        test = test.merge(installments_payments_agg, on = 'SK_ID_CURR', how = 'left')
 #        del installments_payments_agg
 #        gc.collect()
-    return train, test
+    return train.reset_index(), test.reset_index()

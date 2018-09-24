@@ -212,8 +212,8 @@ from lightgbm import LGBMClassifier, Dataset, cv, train
 from xgboost import XGBClassifier
 from sklearn.ensemble import GradientBoostingClassifier
 
-import eli5
-from eli5.sklearn import PermutationImportance
+#import eli5
+#from eli5.sklearn import PermutationImportance
 
 def get_tree_models():
     lgb_params = {}
@@ -307,7 +307,7 @@ def get_datasets(debug_size, silent, treat_duplicated = True):
 if __name__ == "__main__":
     debug_size = 0
     silent = True
-    verbose = 0
+    verbose = 100
     early_stopping_rounds = 200
     
     with timer("Full Model Run"):
@@ -323,25 +323,21 @@ if __name__ == "__main__":
         for name, m in get_tree_models():
         
             with timer("Run " + name):
-                
-                for i in range(50,201,50):
                     
-                    model = AveragingModels(m)
-                    
-                    print(feats[:i])
-                
-                    model.fit(train_X.loc[:, feats[:i]], train_y, folds = 5, stratified = False, verbose = verbose, early_stopping_rounds = early_stopping_rounds)
-                    pred = model.predict_proba(test_X.loc[:, feats[:i]])
-                    
-                    cv_score = model.auc_score
-                    feat_importance = model.importances_df
-                    
-                    #display_importances(feat_importance)
-                    submission = pp.submit_file(ids, pred, prefix_file_name = name, cv_score = cv_score)
-                    
-                    del model, pred, cv_score, feat_importance, submission
-                    gc.collect()
+                model = AveragingModels(m)
             
-    del test_X, train_X, train_y
+                model.fit(train_X.loc[:, feats], train_y, nfolds = 5, stratified = False, verbose = verbose, early_stopping_rounds = early_stopping_rounds)
+                pred = model.predict_proba(test_X.loc[:, feats])
+                
+                cv_score = model.auc_score
+                feat_importance = model.importances_df
+                
+                if debug_size != 0:
+                    submission = pp.submit_file(ids, pred, prefix_file_name = name, cv_score = cv_score)
+                
+                del model, pred, cv_score, feat_importance
+                gc.collect()
+            
+    del test_X, train_X, train_y, submission
     del features_variance
     gc.collect()
