@@ -238,101 +238,6 @@ def get_domain_knowledge_features(X):
     
     return (X_domain.drop(cols_flag_del, axis = 1))
 
-def agg_numeric_old(df, group_var, df_name, agg_funcs = ['count', 'mean', 'max', 'min', 'sum', 'std', 'var']):
-    """Aggregates the numeric values in a dataframe. This can
-    be used to create features for each instance of the grouping variable.
-    
-    Parameters
-    --------
-        df (dataframe): 
-            the dataframe to calculate the statistics on
-        group_var (string): 
-            the variable by which to group df
-        df_name (string): 
-            the variable used to rename the columns
-        
-    Return
-    --------
-        agg (dataframe): 
-            a dataframe with the statistics aggregated for 
-            all numeric columns. Each instance of the grouping variable will have 
-            the statistics (mean, min, max, sum; currently supported) calculated. 
-            The columns are also renamed to keep track of features created.
-    
-    """
-    # Remove id variables other than grouping variable
-    for col in df:
-        if col != group_var and 'SK_ID' in col:
-            df = df.drop([col], axis = 1)
-            
-    group_ids = df.loc[:, group_var].values
-    numeric_df = df.select_dtypes(include = ['number'])
-    numeric_df.loc[:, group_var] = group_ids
-
-    # Group by the specified variable and calculate the statistics
-    agg = numeric_df.groupby(group_var).agg(agg_funcs).reset_index()
-
-    # Need to create new column names
-    columns = [group_var]
-
-    # Iterate through the variables names
-    for var in agg.columns.levels[0]:
-        # Skip the grouping variable
-        if var != group_var:
-            # Iterate through the stat names
-            for stat in agg.columns.levels[1][:-1]:
-                # Make a new column name for the variable and stat
-                columns.append('%s_%s_%s' % (df_name, var, stat))
-
-    agg.columns = columns
-    return agg
-
-def count_categorical_old(df, group_var, df_name, agg_funcs = ['sum', 'mean'], cols_alias = ['count', 'count_norm']):
-    """Computes counts and normalized counts for each observation
-    of `group_var` of each unique category in every categorical variable
-    
-    Parameters
-    --------
-    df : dataframe 
-        The dataframe to calculate the value counts for.
-        
-    group_var : string
-        The variable by which to group the dataframe. For each unique
-        value of this variable, the final dataframe will have one row
-        
-    df_name : string
-        Variable added to the front of column names to keep track of columns
-    
-    Return
-    --------
-    categorical : dataframe
-        A dataframe with counts and normalized counts of each unique category in every categorical variable
-        with one row for every unique value of the `group_var`.
-        
-    """
-    
-    # Select the categorical columns
-    categorical = pd.get_dummies(df.select_dtypes(include = ['object', 'category']))
-
-    # Make sure to put the identifying id on the column
-    categorical[group_var] = df[group_var]
-
-    # Groupby the group var and calculate the sum and mean
-    categorical = categorical.groupby(group_var).agg(agg_funcs)
-    
-    column_names = []
-    
-    # Iterate through the columns in level 0
-    for var in categorical.columns.levels[0]:
-        # Iterate through the stats in level 1
-        for stat in cols_alias:
-            # Make a new column name
-            column_names.append('%s_%s_%s' % (df_name, var, stat))
-    
-    categorical.columns = column_names
-    
-    return categorical
-
 # Function to calculate correlations with the target for a dataframe
 def target_corrs(df):
 
@@ -389,14 +294,6 @@ def get_counts_features(df, group_var, df_name, count_var = None):
         counts = df.groupby(group_var)[group_var].agg('count')
         counts.columns = [df_name + '_ROWCOUNT']
     return (counts.reset_index())
-    
-def get_engineered_features_old(df, group_var, df_name, num_agg_funcs = ['mean', 'max', 'min', 'sum', 'std', 'var'], cat_agg_funcs = ['sum', 'mean'], cols_alias = ['count', 'count_norm']):
-    numerical_agg = agg_numeric_old(df, group_var = group_var, df_name = df_name, agg_funcs = num_agg_funcs)
-    if (any(df.dtypes == 'object') or any(df.dtypes == 'category')):
-        categorical_agg = count_categorical_old(df, group_var = group_var, df_name = df_name, agg_funcs = cat_agg_funcs, cols_alias = cols_alias).reset_index()
-        return numerical_agg.merge(categorical_agg, on = group_var, how = 'inner')
-    else:
-        return(numerical_agg)
 
 def get_engineered_features_from_file(filename, group_var, df_name, drop_cols = None):
     if drop_cols == None:
@@ -433,32 +330,32 @@ def aggregate_client(df, parent_df, group_vars, df_names):
     
     return df_by_client
 
-def aggregate_client_2(df, group_vars, df_names):
-    """Aggregate a dataframe with data at the loan level 
-    at the client level
-    
-    Args:
-        df (dataframe): data at the loan level
-        group_vars (list of two strings): grouping variables for the loan 
-        and then the client (example ['SK_ID_PREV', 'SK_ID_CURR'])
-        names (list of two strings): names to call the resulting columns
-        (example ['cash', 'client'])
-        
-    Returns:
-        df_client (dataframe): aggregated numeric stats at the client level. 
-        Each client will have a single row with all the numeric data aggregated
-    """
-    
-    df_agg = get_engineered_features(df, group_var = group_vars[0], df_name = df_names[0])
-
-    # Merge to include the SK_ID_CURR
-    #bureau_by_loan = bureau[['SK_ID_BUREAU', 'SK_ID_CURR']].merge(bureau_balance_agg, on = 'SK_ID_BUREAU', how = 'left')
-    df_by_loan = df_agg.merge(df[[group_vars[0], group_vars[1]]], on = group_vars[0], how = 'left')
-    df_by_loan = df_by_loan.drop([group_vars[0]], axis = 1)
-    # Aggregate the stats for each client
-    df_by_client = agg_numeric(df_by_loan, group_var = group_vars[1], df_name = df_names[1])
-    
-    return df_by_client
+#def aggregate_client_2(df, group_vars, df_names):
+#    """Aggregate a dataframe with data at the loan level 
+#    at the client level
+#    
+#    Args:
+#        df (dataframe): data at the loan level
+#        group_vars (list of two strings): grouping variables for the loan 
+#        and then the client (example ['SK_ID_PREV', 'SK_ID_CURR'])
+#        names (list of two strings): names to call the resulting columns
+#        (example ['cash', 'client'])
+#        
+#    Returns:
+#        df_client (dataframe): aggregated numeric stats at the client level. 
+#        Each client will have a single row with all the numeric data aggregated
+#    """
+#    
+#    df_agg = get_engineered_features(df, group_var = group_vars[0], df_name = df_names[0])
+#
+#    # Merge to include the SK_ID_CURR
+#    #bureau_by_loan = bureau[['SK_ID_BUREAU', 'SK_ID_CURR']].merge(bureau_balance_agg, on = 'SK_ID_BUREAU', how = 'left')
+#    df_by_loan = df_agg.merge(df[[group_vars[0], group_vars[1]]], on = group_vars[0], how = 'left')
+#    df_by_loan = df_by_loan.drop([group_vars[0]], axis = 1)
+#    # Aggregate the stats for each client
+#    df_by_client = agg_numeric(df_by_loan, group_var = group_vars[1], df_name = df_names[1])
+#    
+#    return df_by_client
 
 def equal_columns(col_a, col_b):
     return np.all(col_a == col_b)
@@ -662,7 +559,6 @@ def agg_categorical(df, group_var, df_name, agg_funcs = ['sum', 'mean'], cols_al
 
     return categorical
 
-#def get_engineered_features_old(df, group_var, df_name, num_agg_funcs = ['mean', 'max', 'min', 'sum', 'std', 'var'], cat_agg_funcs = ['sum', 'mean'], cols_alias = ['count', 'count_norm']):
 def get_engineered_features(df, group_var, df_name, num_agg_funcs = ['mean', 'median', 'sum']):
     num_agg = agg_numeric(df, group_var, df_name, agg_funcs = num_agg_funcs)
     if (any(df.dtypes == 'object') or any(df.dtypes == 'category')):

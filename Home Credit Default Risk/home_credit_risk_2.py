@@ -1,22 +1,20 @@
 import gc
-import feature_selection as fs
 import preprocessing as pp
 from preprocessing import timer
 import load as ld
-from training import display_importances, get_folds, save_importances, AveragingModels
-from sklearn.preprocessing import Imputer
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.feature_selection import SelectFromModel
-from sklearn.pipeline import Pipeline
+from training import save_importances, AveragingModels
 
 from sklearn.feature_selection import VarianceThreshold
 
 import warnings
 warnings.filterwarnings('ignore')
 
-from lightgbm import LGBMClassifier, Dataset, cv, train
+from lightgbm import LGBMClassifier, Dataset, train
 from xgboost import XGBClassifier
 from sklearn.ensemble import GradientBoostingClassifier
+
+from sklearn.feature_selection import SelectFromModel
+from sklearn.preprocessing import StandardScaler
 
 from sklearn.model_selection import train_test_split
 
@@ -85,13 +83,14 @@ def get_importances_from_model(X, y, features = None, verbose = 50, early_stoppi
     lgb_params = {}
     lgb_params['boosting_type'] = 'gbdt'
     lgb_params['objective'] = 'binary'
-    lgb_params['learning_rate'] = 0.05
+    lgb_params['learning_rate'] = 0.03
     lgb_params['metric'] = 'auc'
     lgb_params['num_iterations'] = 10000
     lgb_params["colsample_bytree"] = 0.5
     lgb_params["subsample"] = 0.8
-    lgb_params["reg_alpha"] = 0.1
-    lgb_params['reg_lambda'] = 0.1
+    lgb_params["reg_alpha"] = 0.3
+    lgb_params['reg_lambda'] = 0.3
+    lgb_params['max_depth'] = 8
     
     if features == None:
         features = X.columns.tolist()
@@ -109,15 +108,8 @@ def get_importances_from_model(X, y, features = None, verbose = 50, early_stoppi
 def get_datasets(debug_size, silent, treat_duplicated = True):
     train, test = ld.get_processed_files(debug_size, silent)
     
-    #train = pp.convert_types(train, print_info = not silent)
-    #test = pp.convert_types(test, print_info = not silent)
-    
-    if treat_duplicated:
-        with timer("Treating Duplicated"):
-            duplicated = pp.duplicate_columns(train, verbose = True, progress = False)
-            if len(duplicated) > 0:
-                train.drop(list(duplicated.keys()), axis=1, inplace = True)
-                test.drop(list(duplicated.keys()), axis=1, inplace = True)
+    train = pp.convert_types(train, print_info = not silent)
+    test = pp.convert_types(test, print_info = not silent)
     
     features = [f for f in train.columns if f not in ['TARGET', 'SK_ID_CURR', 'SK_ID_BUREAU', 'SK_ID_PREV', 'index']]
     
@@ -143,6 +135,12 @@ if __name__ == "__main__":
         
         importances_booster = save_importances(train_X.columns.tolist(), lgb_booster.feature_importance(), sort= True, drop_importance_zero = True)
         
+        scaler = StandardScaler()
+        print(scaler.fit(train_X))
+        
+        selector = SelectFromModel(estimator = lgb_booster, threshold = "mean", prefit = True)
+        selector.transform(train_X)
+        
         selector = VarianceThreshold()
         selector.fit(train_X)
         
@@ -155,9 +153,6 @@ if __name__ == "__main__":
             with timer("Run " + name):
                 
                 model = AveragingModels(m, nfolds = 5, stratified = False)
-                
-                #train_X.fillna(0, inplace = True)
-                #test_X.fillna(0, inplace = True)
                 
                 model.fit(train_X.loc[:, feats], train_y, **fp)
                 pred = model.predict_proba(test_X.loc[:, feats])

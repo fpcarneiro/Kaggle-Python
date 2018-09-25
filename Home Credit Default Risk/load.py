@@ -335,7 +335,8 @@ def installments_payments(subset_ids = None, silent = True, treat_cat_missing = 
 def get_processed_files(debug_size, silent = True):
     num_rows = debug_size if debug_size != 0 else None
     with timer("Process application_train and application_test"):
-        train, test = load_train_test(nrows = num_rows, silent = silent, treat_cat_missing = True, treat_num_missing = True)
+        train, test = load_train_test(nrows = num_rows, silent = silent, treat_cat_missing = True, 
+                                      treat_num_missing = True, remove_duplicated_cols = True)
         subset_ids = list(train.SK_ID_CURR) + list(test.SK_ID_CURR) if debug_size != 0 else None
         if silent == False:
             print("Train df shape:", train.shape)
