@@ -96,8 +96,8 @@ def load_train_test(nrows = None, silent = True, treat_cat_missing = False, trea
     
     if not silent:
         print("Creating dummies variables...")
-    train = pd.get_dummies(train, dummy_na = treat_cat_missing)
-    test = pd.get_dummies(test, dummy_na = treat_cat_missing)
+    train = pd.get_dummies(train, dummy_na = treat_cat_missing, dtype = 'bool')
+    test = pd.get_dummies(test, dummy_na = treat_cat_missing, dtype = 'bool')
     
     train_labels = train['TARGET']
     train, test = train.align(test, join = 'inner', axis = 1)
@@ -389,4 +389,5 @@ def get_processed_files(debug_size, silent = True):
 #        test = test.merge(installments_payments_agg, on = 'SK_ID_CURR', how = 'left')
 #        del installments_payments_agg
 #        gc.collect()
-    return train.reset_index(), test.reset_index()
+        
+    return train.reset_index().drop(['index'], axis = 1), test.reset_index().drop(['index'], axis = 1)

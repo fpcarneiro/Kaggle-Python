@@ -123,7 +123,7 @@ def get_datasets(debug_size, silent, treat_duplicated = True):
 
 if __name__ == "__main__":
     debug_size = 0
-    silent = True
+    silent = False
     verbose = 50
     early_stopping_rounds = 200
     
@@ -136,7 +136,7 @@ if __name__ == "__main__":
         importances_booster = save_importances(train_X.columns.tolist(), lgb_booster.feature_importance(), sort= True, drop_importance_zero = True)
         
         scaler = StandardScaler()
-        print(scaler.fit(train_X))
+        print(scaler.fit(train_X[:20000]))
         
         selector = SelectFromModel(estimator = lgb_booster, threshold = "mean", prefit = True)
         selector.transform(train_X)
