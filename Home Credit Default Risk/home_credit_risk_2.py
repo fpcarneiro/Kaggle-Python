@@ -14,7 +14,7 @@ from xgboost import XGBClassifier
 from sklearn.ensemble import GradientBoostingClassifier
 
 from sklearn.feature_selection import SelectFromModel
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
 from sklearn.model_selection import train_test_split
 
@@ -79,7 +79,7 @@ def get_tree_models():
     return tree_models
 
 def get_importances_from_model(X, y, features = None, verbose = 50, early_stopping_rounds = 200):
-     
+    
     lgb_params = {}
     lgb_params['boosting_type'] = 'gbdt'
     lgb_params['objective'] = 'binary'
@@ -91,7 +91,7 @@ def get_importances_from_model(X, y, features = None, verbose = 50, early_stoppi
     lgb_params["reg_alpha"] = 0.3
     lgb_params['reg_lambda'] = 0.3
     lgb_params['max_depth'] = 8
-    
+       
     if features == None:
         features = X.columns.tolist()
         
@@ -102,7 +102,7 @@ def get_importances_from_model(X, y, features = None, verbose = 50, early_stoppi
     
     lgb_booster = train(params = lgb_params, train_set = lgb_train, valid_sets = [lgb_train, lgb_val], valid_names = ["train", "validation"], 
             verbose_eval = verbose, early_stopping_rounds = early_stopping_rounds)
-
+    
     return lgb_booster
 
 def get_datasets(debug_size, silent, treat_duplicated = True):
@@ -123,7 +123,7 @@ def get_datasets(debug_size, silent, treat_duplicated = True):
 
 if __name__ == "__main__":
     debug_size = 0
-    silent = False
+    silent = True
     verbose = 50
     early_stopping_rounds = 200
     
@@ -131,20 +131,27 @@ if __name__ == "__main__":
         
         train_X, train_y, test_X, ids = get_datasets(debug_size = debug_size, silent = silent)
         
-        lgb_booster = get_importances_from_model(train_X, train_y, train_X.columns.tolist(), verbose = verbose,  early_stopping_rounds = early_stopping_rounds)
+        features = train_X.columns.tolist()
+        
+        lgb_booster = get_importances_from_model(train_X, train_y, features, verbose = verbose,  early_stopping_rounds = early_stopping_rounds)
         
         importances_booster = save_importances(train_X.columns.tolist(), lgb_booster.feature_importance(), sort= True, drop_importance_zero = True)
         
-        scaler = StandardScaler()
-        print(scaler.fit(train_X[:20000]))
+        threshold = importances_booster.IMPORTANCE.median()/2
         
-        selector = SelectFromModel(estimator = lgb_booster, threshold = "mean", prefit = True)
+        feats = importances_booster[importances_booster.IMPORTANCE > threshold].FEATURE.tolist()
+        
+        #scaler = MinMaxScaler()
+        #train_X = scaler.fit_transform(train_X)
+        #test_X = scaler.fit(test_X)
+        
+        selector = SelectFromModel(estimator = lgb_booster, threshold = "median", prefit = True)
         selector.transform(train_X)
         
         selector = VarianceThreshold()
         selector.fit(train_X)
         
-        feats = importances_booster.FEATURE.tolist()
+        
         
         print("Classifiers will be fitted with {} out of {} features".format(len(feats), train_X.shape[1]))
         
@@ -172,3 +179,7 @@ if __name__ == "__main__":
 
 
 #Full AUC score 0.769662
+#[993]   train's auc: 0.86315    validation's auc: 0.768789
+#[1053]  train's auc: 0.867744   validation's auc: 0.767411 (StandardScaler)
+#[1241]  train's auc: 0.879679   validation's auc: 0.767784 (Robust Scaler)
+#[1247]  train's auc: 0.879185   validation's auc: 0.768503 (MinMaxScaler)

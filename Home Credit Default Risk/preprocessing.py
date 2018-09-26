@@ -191,52 +191,53 @@ def correlation_matrix(dataset, target = 'TARGET', nvar = 10):
     return list(cols[1:])
 
 def get_domain_knowledge_features(X):
-    X_domain = X.copy()
+    X_ = X.copy()
     exc_cols = ['FONDKAPREMONT_MODE', 'HOUSETYPE_MODE','WALLSMATERIAL_MODE', 'EMERGENCYSTATE_MODE']
-    flag_doc_cols = [c for c in X_domain.columns if c.startswith("FLAG_DOCUMENT_")]
-    client_living_avg_cols = [c for c in X_domain.columns if c.endswith("_AVG")]
-    client_living_mode_cols = [c for c in X_domain.columns if c.endswith("_MODE") and c not in exc_cols]
-    client_living_median_cols = [c for c in X_domain.columns if c.endswith("_MEDI")]
+    flag_doc_cols = [c for c in X_.columns if c.startswith("FLAG_DOCUMENT_")]
+    client_living_avg_cols = [c for c in X_.columns if c.endswith("_AVG")]
+    client_living_mode_cols = [c for c in X_.columns if c.endswith("_MODE") and c not in exc_cols]
+    client_living_median_cols = [c for c in X_.columns if c.endswith("_MEDI")]
     
+    X_['CREDIT_INCOME_PERCENT'] = X_['AMT_CREDIT'] / X_['AMT_INCOME_TOTAL']
+    X_['CREDIT_GOODS_PRICE_PERCENT'] = X_['AMT_CREDIT'] / X_['AMT_GOODS_PRICE']
+    X_['AMT_CREDIT_AMT_GOODS_PRICE_DIF'] = X_['AMT_CREDIT'] - X_['AMT_GOODS_PRICE']
+    X_['ANNUITY_INCOME_PERCENT'] = X_['AMT_ANNUITY'] / X_['AMT_INCOME_TOTAL']
+    X_['CREDIT_TERM'] = X_['AMT_ANNUITY'] / X_['AMT_CREDIT']
+    X_['DAYS_EMPLOYED_PERCENT'] = X_['DAYS_EMPLOYED'] / X_['DAYS_BIRTH']
+    X_['INCOME_CREDIT_PERC'] = X_['AMT_INCOME_TOTAL'] / X_['AMT_CREDIT']
+    X_['INCOME_PER_PERSON'] = X_['AMT_INCOME_TOTAL'] / X_['CNT_FAM_MEMBERS']
+    X_['INCOME_PER_CHILDREN'] = X_['AMT_INCOME_TOTAL'] / (1 + X_['CNT_CHILDREN'])
+    X_['CHILDREN_RATIO'] = X_['CNT_CHILDREN'] / X_['CNT_FAM_MEMBERS']
     
-    X_domain['CREDIT_INCOME_PERCENT'] = X_domain['AMT_CREDIT'] / X_domain['AMT_INCOME_TOTAL']
-    X_domain['CREDIT_GOODS_PRICE_PERCENT'] = X_domain['AMT_CREDIT'] / X_domain['AMT_GOODS_PRICE']
-    X_domain['AMT_CREDIT_AMT_GOODS_PRICE_DIF'] = X_domain['AMT_CREDIT'] - X_domain['AMT_GOODS_PRICE']
-    X_domain['ANNUITY_INCOME_PERCENT'] = X_domain['AMT_ANNUITY'] / X_domain['AMT_INCOME_TOTAL']
-    X_domain['CREDIT_TERM'] = X_domain['AMT_ANNUITY'] / X_domain['AMT_CREDIT']
-    X_domain['DAYS_EMPLOYED_PERCENT'] = X_domain['DAYS_EMPLOYED'] / X_domain['DAYS_BIRTH']
-    X_domain['INCOME_CREDIT_PERC'] = X_domain['AMT_INCOME_TOTAL'] / X_domain['AMT_CREDIT']
-    X_domain['INCOME_PER_PERSON'] = X_domain['AMT_INCOME_TOTAL'] / X_domain['CNT_FAM_MEMBERS']
-    X_domain['INCOME_PER_CHILDREN'] = X_domain['AMT_INCOME_TOTAL'] / (1 + X_domain['CNT_CHILDREN'])
-    X_domain['CHILDREN_RATIO'] = X_domain['CNT_CHILDREN'] / X_domain['CNT_FAM_MEMBERS']
+    X_['OWN_CAR_AGE_DAYS_BIRTH'] = X_['OWN_CAR_AGE'] / X_['DAYS_BIRTH']
+    X_['OWN_CAR_AGE_DAYS_EMPLOYED'] = X_['OWN_CAR_AGE'] / X_['DAYS_EMPLOYED']
+    X_['DAYS_LAST_PHONE_CHANGE_DAYS_BIRTH'] = X_['DAYS_LAST_PHONE_CHANGE'] / X_['DAYS_BIRTH']
+    X_['DAYS_LAST_PHONE_CHANGE_DAYS_EMPLOYED'] = X_['DAYS_LAST_PHONE_CHANGE'] / X_['DAYS_EMPLOYED']
+    X_['DAYS_EMPLOYED_DAYS_BIRTH'] = X_['DAYS_EMPLOYED'] - X_['DAYS_BIRTH']
     
-    X_domain['OWN_CAR_AGE_DAYS_BIRTH'] = X_domain['OWN_CAR_AGE'] / X_domain['DAYS_BIRTH']
-    X_domain['OWN_CAR_AGE_DAYS_EMPLOYED'] = X_domain['OWN_CAR_AGE'] / X_domain['DAYS_EMPLOYED']
-    #X_domain['DAYS_LAST_PHONE_CHANGE_DAYS_BIRTH'] = X_domain['DAYS_LAST_PHONE_CHANGE'] / X_domain['DAYS_BIRTH']
-    #X_domain['DAYS_LAST_PHONE_CHANGE_DAYS_EMPLOYED'] = X_domain['DAYS_LAST_PHONE_CHANGE'] / X_domain['DAYS_EMPLOYED']
-    X_domain['DAYS_EMPLOYED_DAYS_BIRTH'] = X_domain['DAYS_EMPLOYED'] - X_domain['DAYS_BIRTH']
+    X_["HOW_MANY_DOCUMENTS"] = X_.loc[:, flag_doc_cols].sum(axis=1)
+    X_["EXT_SOURCE_SUM"] = X_.loc[:, ['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']].sum(axis=1)
+    X_["EXT_SOURCE_AVG"] = X_.loc[:, ['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']].mean(axis=1)
+    X_["EXT_SOURCE_STD"] = X_.loc[:, ['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']].std(axis=1)
     
-    X_domain["HOW_MANY_DOCUMENTS"] = X_domain.loc[:, flag_doc_cols].sum(axis=1)
-    X_domain["EXT_SOURCE_SUM"] = X_domain.loc[:, ['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']].sum(axis=1)
-    X_domain["EXT_SOURCE_AVG"] = X_domain.loc[:, ['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']].mean(axis=1)
-    X_domain["EXT_SOURCE_STD"] = X_domain.loc[:, ['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']].std(axis=1)
-    
-    X_domain['EXT_SOURCE_PROD'] = X_domain['EXT_SOURCE_1'] * X_domain['EXT_SOURCE_2'] * X_domain['EXT_SOURCE_3']
-    X_domain['EXT_SOURCE_1_EXT_SOURCE_2'] = X_domain['EXT_SOURCE_1'] * X_domain['EXT_SOURCE_2']
-    X_domain['EXT_SOURCE_1_EXT_SOURCE_3'] = X_domain['EXT_SOURCE_1'] * X_domain['EXT_SOURCE_3']
-    X_domain['EXT_SOURCE_2_EXT_SOURCE_3'] = X_domain['EXT_SOURCE_2'] * X_domain['EXT_SOURCE_3']
-    X_domain['EXT_SOURCE_1_DAYS_EMPLOYED'] = X_domain['EXT_SOURCE_1'] * X_domain['DAYS_EMPLOYED']
-    X_domain['EXT_SOURCE_2_DAYS_EMPLOYED'] = X_domain['EXT_SOURCE_2'] * X_domain['DAYS_EMPLOYED']
-    X_domain['EXT_SOURCE_3_DAYS_EMPLOYED'] = X_domain['EXT_SOURCE_3'] * X_domain['DAYS_EMPLOYED']
-    X_domain['EXT_SOURCE_1_DAYS_BIRTH'] = X_domain['EXT_SOURCE_1'] / X_domain['DAYS_BIRTH']
-    X_domain['EXT_SOURCE_2_DAYS_BIRTH'] = X_domain['EXT_SOURCE_2'] / X_domain['DAYS_BIRTH']
-    X_domain['EXT_SOURCE_3_DAYS_BIRTH'] = X_domain['EXT_SOURCE_3'] / X_domain['DAYS_BIRTH']
+    X_['EXT_SOURCE_PROD'] = X_['EXT_SOURCE_1'] * X_['EXT_SOURCE_2'] * X_['EXT_SOURCE_3']
+    X_['EXT_SOURCE_1_EXT_SOURCE_2'] = X_['EXT_SOURCE_1'] * X_['EXT_SOURCE_2']
+    X_['EXT_SOURCE_1_EXT_SOURCE_3'] = X_['EXT_SOURCE_1'] * X_['EXT_SOURCE_3']
+    X_['EXT_SOURCE_2_EXT_SOURCE_3'] = X_['EXT_SOURCE_2'] * X_['EXT_SOURCE_3']
+    X_['EXT_SOURCE_1_DAYS_EMPLOYED'] = X_['EXT_SOURCE_1'] * X_['DAYS_EMPLOYED']
+    X_['EXT_SOURCE_2_DAYS_EMPLOYED'] = X_['EXT_SOURCE_2'] * X_['DAYS_EMPLOYED']
+    X_['EXT_SOURCE_3_DAYS_EMPLOYED'] = X_['EXT_SOURCE_3'] * X_['DAYS_EMPLOYED']
+    X_['EXT_SOURCE_1_DAYS_BIRTH'] = X_['EXT_SOURCE_1'] / X_['DAYS_BIRTH']
+    X_['EXT_SOURCE_2_DAYS_BIRTH'] = X_['EXT_SOURCE_2'] / X_['DAYS_BIRTH']
+    X_['EXT_SOURCE_3_DAYS_BIRTH'] = X_['EXT_SOURCE_3'] / X_['DAYS_BIRTH']
     
     cols_flag_del = ['FLAG_DOCUMENT_16', 'FLAG_DOCUMENT_18', 'FLAG_DOCUMENT_11', 'FLAG_DOCUMENT_9', 'FLAG_DOCUMENT_13',
 'FLAG_DOCUMENT_14', 'FLAG_DOCUMENT_15', 'FLAG_DOCUMENT_19', 'FLAG_DOCUMENT_20', 'FLAG_DOCUMENT_21', 'FLAG_DOCUMENT_17',
 'FLAG_DOCUMENT_7', 'FLAG_DOCUMENT_4', 'FLAG_DOCUMENT_2', 'FLAG_DOCUMENT_10', 'FLAG_DOCUMENT_12']
     
-    return (X_domain.drop(cols_flag_del, axis = 1))
+    X_.replace([np.inf, -np.inf, np.nan], 0, inplace = True)
+    
+    return (X_.drop(cols_flag_del, axis = 1))
 
 # Function to calculate correlations with the target for a dataframe
 def target_corrs(df):
