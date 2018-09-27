@@ -2,7 +2,7 @@ import gc
 import preprocessing as pp
 from preprocessing import timer
 import load as ld
-from training import save_importances, AveragingModels
+from training import save_importances, AveragingModels, ClassifierWrapper, LightGBMWrapper, XgbWrapper, OOFClassifier
 
 from sklearn.feature_selection import VarianceThreshold
 
@@ -12,6 +12,8 @@ warnings.filterwarnings('ignore')
 from lightgbm import LGBMClassifier, Dataset, train
 from xgboost import XGBClassifier
 from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.linear_model import LogisticRegression
 
 from sklearn.feature_selection import SelectFromModel
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
@@ -22,19 +24,19 @@ from sklearn import ensemble
 
 def get_tree_models():
     lgb_params = {}
-    lgb_params['nthread'] = 2
+    lgb_params['nthread'] = 3
     lgb_params['n_estimators'] = 10000
-    lgb_params['learning_rate'] = 0.01
-    #lgb_params['colsample_bytree'] = 0.5
-    #lgb_params['subsample'] = 0.8
-#    lgb_params['max_depth'] = 8
-#    lgb_params["reg_alpha"] = 0.041545473
-#    lgb_params['reg_lambda'] = 0.0735294
-#    lgb_params['min_split_gain'] = 0.0735294
-#    lgb_params['min_child_weight'] = 0.0735294
-#    lgb_params['num_leaves'] = 34
+    lgb_params['learning_rate'] = 0.02
+    lgb_params['colsample_bytree'] = 0.9497036
+    lgb_params['subsample'] = 0.8715623
+    lgb_params['max_depth'] = 8
+    lgb_params["reg_alpha"] = 0.041545473
+    lgb_params['reg_lambda'] = 0.0735294
+    lgb_params['min_split_gain'] = 0.0222415
+    lgb_params['min_child_weight'] = 39.3259775
+    lgb_params['num_leaves'] = 34
     lgb_params['silent'] = False
-    
+       
     xgb_params = dict()
     xgb_params["booster"] = "gbtree"
     xgb_params["objective"] = "binary:logistic"
@@ -50,20 +52,22 @@ def get_tree_models():
     
     lgb_fit_params = {}
     lgb_fit_params['eval_metric'] = 'auc'
-    lgb_fit_params['verbose'] = 0
+    lgb_fit_params['verbose'] = 50
     lgb_fit_params['early_stopping_rounds'] = 200
     lgb_fit_params['eval_set'] = {}
     lgb_fit_params['eval_names'] = ["train", "validation"]
     
     xgb_fit_params = {}
     xgb_fit_params['eval_metric'] = 'auc'
-    xgb_fit_params['verbose'] = 0
+    xgb_fit_params['verbose'] = 50
     xgb_fit_params['early_stopping_rounds'] = 200
     xgb_fit_params['eval_set'] = {}
     
     params = {'n_estimators': 1200, 'max_depth': 3, 'subsample': 0.5,
           'learning_rate': 0.01, 'min_samples_leaf': 1, 'random_state': 3}
     clf = ensemble.GradientBoostingClassifier(**params)
+    
+    kn = KNeighborsClassifier(3)
 
     tree_models = []
     for seed in [2017]:
@@ -72,9 +76,10 @@ def get_tree_models():
         
         lgbm = LGBMClassifier(**lgb_params)
         xgb = XGBClassifier(**xgb_params)
-        tree_models.append(("GBoost_" + str(seed), clf, {}))
+        #tree_models.append(("k-nearest", kn, {}))
         tree_models.append(("LightGBM_" + str(seed), lgbm, lgb_fit_params))
-        tree_models.append(("XGBoost_" + str(seed), xgb, xgb_fit_params))
+        #tree_models.append(("XGBoost_" + str(seed), xgb, xgb_fit_params))
+        #tree_models.append(("GBoost_" + str(seed), clf, {}))
         
     return tree_models
 
@@ -122,8 +127,8 @@ def get_datasets(debug_size, silent, treat_duplicated = True):
     return train_X, train_y, test_X, ids
 
 if __name__ == "__main__":
-    debug_size = 0
-    silent = True
+    debug_size = 30000
+    silent = False
     verbose = 50
     early_stopping_rounds = 200
     
@@ -137,7 +142,7 @@ if __name__ == "__main__":
         
         importances_booster = save_importances(train_X.columns.tolist(), lgb_booster.feature_importance(), sort= True, drop_importance_zero = True)
         
-        threshold = importances_booster.IMPORTANCE.median()/2
+        threshold = importances_booster.IMPORTANCE.median()/4
         
         feats = importances_booster[importances_booster.IMPORTANCE > threshold].FEATURE.tolist()
         
@@ -145,13 +150,11 @@ if __name__ == "__main__":
         #train_X = scaler.fit_transform(train_X)
         #test_X = scaler.fit(test_X)
         
-        selector = SelectFromModel(estimator = lgb_booster, threshold = "median", prefit = True)
-        selector.transform(train_X)
+        #selector = SelectFromModel(estimator = lgb_booster, threshold = "median", prefit = True)
+        #selector.transform(train_X)
         
-        selector = VarianceThreshold()
-        selector.fit(train_X)
-        
-        
+        #selector = VarianceThreshold()
+        #selector.fit(train_X)
         
         print("Classifiers will be fitted with {} out of {} features".format(len(feats), train_X.shape[1]))
         

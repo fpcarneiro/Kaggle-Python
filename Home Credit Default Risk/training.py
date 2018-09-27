@@ -9,11 +9,61 @@ from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from sklearn.utils.multiclass import unique_labels
 from sklearn.metrics import euclidean_distances
 
+from sklearn.linear_model import LogisticRegression
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
 
+import lightgbm as lgbm
+import xgboost as xgb
+
 warnings.simplefilter(action='ignore', category=FutureWarning)
+
+class ClassifierWrapper(BaseEstimator, ClassifierMixin):
+    def __init__(self, clf = LogisticRegression, name = "classifier", params={}):
+        self.params = params
+        self.clf = clf
+        self.name = name
+        
+    def get_params(self, deep=True):
+        return {"clf": self.clf, "params": self.params, "name": self.name}
+    
+    def set_params(self, **parameters):
+        for parameter, value in parameters.items():
+            setattr(self, parameter, value)
+        return self
+
+    def fit(self, X, y, **fit_params):
+        self.classes_, y = np.unique(y, return_inverse=True)
+        self.classifier_ = self.clf(**self.params)
+        self.classifier_.fit(X, y, **fit_params)
+        return self
+        
+    def predict_proba(self, X):
+        check_is_fitted(self, ['classes_'])
+        return self.classifier_.predict_proba(X)[:,1]
+
+class LightGBMWrapper(ClassifierWrapper):
+    def fit(self, X, y, **fit_params):
+        train_X = lgbm.Dataset(data = X, label = y)
+        self.booster_ = lgbm.train(params=self.params, train_set=train_X, **fit_params)
+        return self
+
+    def predict_proba(self, X):
+        check_is_fitted(self, ['booster_'])
+        return self.booster_.predict(X)
+    
+class XgbWrapper(ClassifierWrapper):
+    
+    def fit(self, X, y, **fit_params):
+        train_X = xgb.DMatrix(data=X, label=y)
+        self.booster_ = xgb.train(params=self.params, dtrain=train_X, **fit_params)
+        return self
+
+    def predict_proba(self, X):
+        check_is_fitted(self, ['booster_'])
+        return self.booster_.predict(xgb.DMatrix(data=X))
 
 def display_importances(feature_importance_df_, how_many = 40):
     cols = feature_importance_df_[["feature", "importance"]].groupby("feature").mean().sort_values(by="importance", ascending=False)[:how_many].index
@@ -28,6 +78,7 @@ def save_importances(features, importances, fold = -1, sort = False, drop_import
     importance_record = pd.DataFrame()
     importance_record["FEATURE"] = features
     importance_record["IMPORTANCE"] = importances
+    
     if fold != -1:
         importance_record["FOLD"] = fold
     if sort:
@@ -43,6 +94,83 @@ def get_folds(num_folds, stratified = False, seed = 1001):
     else:
         folds = KFold(n_splits= num_folds, shuffle=True, random_state=seed)
     return folds
+
+class OOFClassifier(BaseEstimator, ClassifierMixin):
+    def __init__(self, clf, weights = "same", nfolds = 5, stratified = False):
+        self.clf = clf
+        self.weights = weights
+        self.nfolds = nfolds
+        self.stratified = stratified
+        
+    def get_params(self, deep=True):
+        return {"clf": self.clf, "weights": self.weights, "nfolds": self.nfolds, "stratified": self.stratified}
+    
+    def set_params(self, **parameters):
+        for parameter, value in parameters.items():
+            setattr(self, parameter, value)
+        return self
+    
+    def fit(self, X, y, **fit_params):
+        # Check that X and y have correct shape
+        #X, y = check_X_y(X, y)
+        # Store the classes seen during fit
+        self.classes_, y = np.unique(y, return_inverse=True)
+        
+        self.models_ = [clone(self.clf) for f in range(self.nfolds)]
+        #self.models_ = [None for f in range(self.nfolds)]
+        self.importances_ = pd.DataFrame()
+        
+        folds = get_folds(self.nfolds, self.stratified)
+        self.oof_preds_ = np.zeros(X.shape[0])
+        
+        for n_fold, (train_idx, valid_idx) in enumerate(folds.split(X, y)):
+            train_x, train_y = X.iloc[train_idx], y[train_idx]
+            valid_x, valid_y = X.iloc[valid_idx], y[valid_idx]
+            
+            if 'eval_set' in fit_params:
+                fit_params['eval_set'] = [(train_x, train_y), (valid_x, valid_y)]
+            
+            self.models_[n_fold].fit(train_x, train_y, **fit_params)
+            
+            self.oof_preds_[valid_idx] = self.models_[n_fold].predict_proba(valid_x)
+            
+            if(hasattr(self.models_[n_fold], "feature_importances_")):
+                importances = self.models_[n_fold].feature_importances_
+            elif(hasattr(self.models_[n_fold], "feature_importance")):
+                importances = self.models_[n_fold].feature_importance
+            elif(hasattr(self.models_[n_fold], "coef_")):
+                importances = self.models_[n_fold].coef_
+            elif(hasattr(self.models_[n_fold], "coefs_")):
+                importances = self.models_[n_fold].coefs_
+            else:
+                importances = None
+                
+            fold_importance_df = save_importances(train_x.columns.tolist(), importances, fold = n_fold + 1)
+            
+            self.importances_ = pd.concat([self.importances_, fold_importance_df], axis=0)
+            print('Fold %2d AUC : %.6f' % (n_fold + 1, roc_auc_score(valid_y, self.oof_preds_[valid_idx])))
+            
+            del train_x, train_y, valid_x, valid_y
+            gc.collect()
+        
+        self.auc_score_ = roc_auc_score(y, self.oof_preds_)
+        print('Full AUC score %.6f' % self.auc_score_)
+        
+        return self
+    
+    def predict_proba(self, X):
+        
+        # Check is fit had been called
+        check_is_fitted(self, ['classes_', 'models_', 'importances_', 'oof_preds_', 'auc_score_'])
+        
+        self.predictions = np.column_stack([model.predict_proba(X) for model in self.models_])
+        
+        if self.weights == "same":
+            return np.mean(self.predictions, axis=1)
+        else:
+            for i in range(len(self.models_)):
+                self.predictions[:, i] *= self.weights[i]
+            return np.sum(self.predictions, axis=1)
     
 class AveragingModels(BaseEstimator, ClassifierMixin):
     def __init__(self, model, weights = "same", nfolds = 5, stratified = False):
@@ -84,7 +212,18 @@ class AveragingModels(BaseEstimator, ClassifierMixin):
             
             self.oof_preds_[valid_idx] = self.models_[n_fold].predict_proba(valid_x)[:, 1]
             
-            fold_importance_df = save_importances(train_x.columns.tolist(), self.models_[n_fold].feature_importances_, fold = n_fold + 1)
+            if(hasattr(self.models_[n_fold], "feature_importances_")):
+                importances = self.models_[n_fold].feature_importances_
+            elif(hasattr(self.models_[n_fold], "feature_importance")):
+                importances = self.models_[n_fold].feature_importance
+            elif(hasattr(self.models_[n_fold], "coef_")):
+                importances = self.models_[n_fold].coef_
+            elif(hasattr(self.models_[n_fold], "coefs_")):
+                importances = self.models_[n_fold].coefs_
+            else:
+                importances = None
+                
+            fold_importance_df = save_importances(train_x.columns.tolist(), importances, fold = n_fold + 1)
             
             self.importances_ = pd.concat([self.importances_, fold_importance_df], axis=0)
             print('Fold %2d AUC : %.6f' % (n_fold + 1, roc_auc_score(valid_y, self.oof_preds_[valid_idx])))
