@@ -20,14 +20,13 @@ import xgboost as xgb
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-class ClassifierWrapper(BaseEstimator, ClassifierMixin):
-    def __init__(self, clf = LogisticRegression, name = "classifier", params={}):
-        self.params = params
+class GenericWrapper(BaseEstimator, ClassifierMixin):
+    def __init__(self, clf = LogisticRegression(), name = "classifier"):
         self.clf = clf
         self.name = name
         
     def get_params(self, deep=True):
-        return {"clf": self.clf, "params": self.params, "name": self.name}
+        return {"clf": self.clf, "name": self.name}
     
     def set_params(self, **parameters):
         for parameter, value in parameters.items():
@@ -36,34 +35,91 @@ class ClassifierWrapper(BaseEstimator, ClassifierMixin):
 
     def fit(self, X, y, **fit_params):
         self.classes_, y = np.unique(y, return_inverse=True)
-        self.classifier_ = self.clf(**self.params)
-        self.classifier_.fit(X, y, **fit_params)
+        self.feature_names_ = X.columns.tolist()
+        self.clf.fit(X, y, **fit_params)
         return self
         
     def predict_proba(self, X):
-        check_is_fitted(self, ['classes_'])
-        return self.classifier_.predict_proba(X)[:,1]
+        check_is_fitted(self, ['classes_', 'feature_names_'])
+        return self.clf.predict_proba(X)[:,1]
+    
+    def feature_importance(self, importance_type='gain', iteration=-1):
+        check_is_fitted(self, ['classes_', 'feature_names_'])
+        if(hasattr(self.clf, "feature_importances_")):
+            return dict(zip(self.feature_names_, self.clf.feature_importances_))
+        else:
+            return dict(zip(self.feature_names_, [0] * len(self.feature_names_)))
 
-class LightGBMWrapper(ClassifierWrapper):
-    def fit(self, X, y, **fit_params):
-        train_X = lgbm.Dataset(data = X, label = y)
-        self.booster_ = lgbm.train(params=self.params, train_set=train_X, **fit_params)
+class LightGBMWrapper(BaseEstimator, ClassifierMixin):
+    def __init__(self, params = {}, name = "lgb"):
+        self.params = params
+        self.name = name
+        
+    def get_params(self, deep=True):
+        return {"params": self.params, "name": self.name}
+    
+    def set_params(self, **parameters):
+        for parameter, value in parameters.items():
+            setattr(self, parameter, value)
         return self
-
+    
+    def fit(self, X, y, **fit_params):
+        self.classes_, y = np.unique(y, return_inverse=True)
+        self.feature_names_ = X.columns.tolist()
+        
+        train_X = lgbm.Dataset(data = X, label = y, feature_name = self.feature_names_)
+        
+        if 'valid_sets' in fit_params:
+            datasets = [ lgbm.Dataset(data = val_x, label = val_y, feature_name = self.feature_names_) for (val_x, val_y) in fit_params['valid_sets'] ]
+            fit_params['valid_sets'] = datasets
+            self.fit_params_ = fit_params
+        
+        self.booster_ = lgbm.train(params=self.params, train_set=train_X, **self.fit_params_)
+        return self
+        
     def predict_proba(self, X):
-        check_is_fitted(self, ['booster_'])
+        check_is_fitted(self, ['booster_', 'classes_', 'feature_names_'])
         return self.booster_.predict(X)
     
-class XgbWrapper(ClassifierWrapper):
+    def feature_importance(self, importance_type='gain', iteration=-1):
+        check_is_fitted(self, ['booster_', 'classes_', 'feature_names_'])
+        return dict(zip(self.feature_names_, self.booster_.feature_importance()))
+    
+class XgbWrapper(BaseEstimator, ClassifierMixin):
+    def __init__(self, params = {}, name = "xgb"):
+        self.params = params
+        self.name = name
+        
+    def get_params(self, deep=True):
+        return {"params": self.params, "name": self.name}
+    
+    def set_params(self, **parameters):
+        for parameter, value in parameters.items():
+            setattr(self, parameter, value)
+        return self
     
     def fit(self, X, y, **fit_params):
-        train_X = xgb.DMatrix(data=X, label=y)
+        self.classes_, y = np.unique(y, return_inverse=True)
+        self.feature_names_ = X.columns.tolist()
+        
+        train_X = xgb.DMatrix(data=X, label=y, feature_names = self.feature_names_)
+        
+        if 'evals' in fit_params:
+            datasets = [ (xgb.DMatrix(data = val_x, label = val_y, feature_names = self.feature_names_), name) for (val_x, val_y), name in fit_params['evals'] ]
+            fit_params['evals'] = datasets
+            self.fit_params_ = fit_params
+        
         self.booster_ = xgb.train(params=self.params, dtrain=train_X, **fit_params)
         return self
 
     def predict_proba(self, X):
-        check_is_fitted(self, ['booster_'])
+        check_is_fitted(self, ['booster_', 'classes_', 'feature_names_'])
         return self.booster_.predict(xgb.DMatrix(data=X))
+    
+    def feature_importance(self, fmap='', importance_type='gain'):
+        check_is_fitted(self, ['booster_', 'classes_', 'feature_names_'])
+        return self.booster_.get_score()
+
 
 def display_importances(feature_importance_df_, how_many = 40):
     cols = feature_importance_df_[["feature", "importance"]].groupby("feature").mean().sort_values(by="importance", ascending=False)[:how_many].index
@@ -74,10 +130,10 @@ def display_importances(feature_importance_df_, how_many = 40):
     plt.tight_layout()
     plt.savefig('lgbm_importances01.png')
     
-def save_importances(features, importances, fold = -1, sort = False, drop_importance_zero = False):
+def save_importances(importances, fold = -1, sort = False, drop_importance_zero = False):
     importance_record = pd.DataFrame()
-    importance_record["FEATURE"] = features
-    importance_record["IMPORTANCE"] = importances
+    importance_record["FEATURE"] = importances.keys()
+    importance_record["IMPORTANCE"] = importances.values()
     
     if fold != -1:
         importance_record["FOLD"] = fold
@@ -127,8 +183,12 @@ class OOFClassifier(BaseEstimator, ClassifierMixin):
             train_x, train_y = X.iloc[train_idx], y[train_idx]
             valid_x, valid_y = X.iloc[valid_idx], y[valid_idx]
             
+            if 'valid_sets' in fit_params:
+                fit_params['valid_sets'] = [(train_x, train_y), (valid_x, valid_y)]
+            if 'evals' in fit_params:
+                fit_params['evals'] = [((train_x, train_y), "train"), ((valid_x, valid_y), "validation")]
             if 'eval_set' in fit_params:
-                fit_params['eval_set'] = [(train_x, train_y), (valid_x, valid_y)]
+                fit_params['eval_set'] = [(valid_x, valid_y)]
             
             self.models_[n_fold].fit(train_x, train_y, **fit_params)
             
@@ -137,7 +197,7 @@ class OOFClassifier(BaseEstimator, ClassifierMixin):
             if(hasattr(self.models_[n_fold], "feature_importances_")):
                 importances = self.models_[n_fold].feature_importances_
             elif(hasattr(self.models_[n_fold], "feature_importance")):
-                importances = self.models_[n_fold].feature_importance
+                importances = self.models_[n_fold].feature_importance()
             elif(hasattr(self.models_[n_fold], "coef_")):
                 importances = self.models_[n_fold].coef_
             elif(hasattr(self.models_[n_fold], "coefs_")):
@@ -145,7 +205,7 @@ class OOFClassifier(BaseEstimator, ClassifierMixin):
             else:
                 importances = None
                 
-            fold_importance_df = save_importances(train_x.columns.tolist(), importances, fold = n_fold + 1)
+            fold_importance_df = save_importances(importances, fold = n_fold + 1)
             
             self.importances_ = pd.concat([self.importances_, fold_importance_df], axis=0)
             print('Fold %2d AUC : %.6f' % (n_fold + 1, roc_auc_score(valid_y, self.oof_preds_[valid_idx])))
