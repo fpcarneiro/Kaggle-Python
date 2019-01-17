@@ -40,9 +40,9 @@ def check_flag_doc_cols(dataset):
     missing_table = mis_val_table.drop(mis_val_table[mis_val_table.iloc[:, 1] == 0].index).sort_values('% of Total', ascending=False).round(2)
     return(missing_table)
     
-def check_categorical_cols_values(dataset, dropna = True, col = "ORGANIZATION_TYPE"):
-    all_data_absolute = dataset.loc[:, col].value_counts(dropna = dropna).rename("Count")
-    all_data_percent = ((dataset.loc[:, col].value_counts(dropna = dropna) / len(dataset)) * 100).rename("% of Total")
+def check_categorical_cols_values(dataset, col = "ORGANIZATION_TYPE"):
+    all_data_absolute = dataset.loc[:, col].value_counts().rename("Count")
+    all_data_percent = ((dataset.loc[:, col].value_counts() / len(dataset)) * 100).rename("% of Total")
     mis_val_table = pd.concat([all_data_absolute, all_data_percent], axis=1)
     #mis_val_table.rename(columns = {0 : 'Count', 1 : '% of Total'}, inplace = True)
     missing_table = mis_val_table.drop(mis_val_table[mis_val_table.iloc[:, 1] == 0].index).sort_values('% of Total', ascending=False).round(2)
@@ -192,7 +192,7 @@ def get_domain_knowledge_features(X):
     
     return (X_domain.drop(cols_flag_del, axis = 1))
 
-def agg_numeric(df, group_var, df_name, agg_funcs = ['count', 'mean', 'max', 'min', 'sum', 'std', 'var']):
+def agg_numeric(df, group_var, df_name):
     """Aggregates the numeric values in a dataframe. This can
     be used to create features for each instance of the grouping variable.
     
@@ -224,7 +224,7 @@ def agg_numeric(df, group_var, df_name, agg_funcs = ['count', 'mean', 'max', 'mi
     numeric_df[group_var] = group_ids
 
     # Group by the specified variable and calculate the statistics
-    agg = numeric_df.groupby(group_var).agg(agg_funcs).reset_index()
+    agg = numeric_df.groupby(group_var).agg(['count', 'mean', 'max', 'min', 'sum', 'std', 'var']).reset_index()
 
     # Need to create new column names
     columns = [group_var]
@@ -241,7 +241,7 @@ def agg_numeric(df, group_var, df_name, agg_funcs = ['count', 'mean', 'max', 'mi
     agg.columns = columns
     return agg
 
-def count_categorical(df, group_var, df_name, agg_funcs = ['sum', 'mean'], cols_alias = ['count', 'count_norm']):
+def count_categorical(df, group_var, df_name):
     """Computes counts and normalized counts for each observation
     of `group_var` of each unique category in every categorical variable
     
@@ -272,14 +272,14 @@ def count_categorical(df, group_var, df_name, agg_funcs = ['sum', 'mean'], cols_
     categorical[group_var] = df[group_var]
 
     # Groupby the group var and calculate the sum and mean
-    categorical = categorical.groupby(group_var).agg(agg_funcs)
+    categorical = categorical.groupby(group_var).agg(['sum', 'mean'])
     
     column_names = []
     
     # Iterate through the columns in level 0
     for var in categorical.columns.levels[0]:
         # Iterate through the stats in level 1
-        for stat in cols_alias:
+        for stat in ['count', 'count_norm']:
             # Make a new column name
             column_names.append('%s_%s_%s' % (df_name, var, stat))
     
@@ -335,10 +335,10 @@ def kde_target(var_name, df):
     print('Median value for loan that was not repaid = %0.4f' % avg_not_repaid)
     print('Median value for loan that was repaid =     %0.4f' % avg_repaid)
 
-def get_engineered_features(df, group_var, df_name, num_agg_funcs = ['count', 'mean', 'max', 'min', 'sum', 'std', 'var'], cat_agg_funcs = ['sum', 'mean'], cols_alias = ['count', 'count_norm']):
-    numerical_agg = agg_numeric(df, group_var = group_var, df_name = df_name, agg_funcs = num_agg_funcs)
+def get_engineered_features(df, group_var, df_name):
+    numerical_agg = agg_numeric(df, group_var = group_var, df_name = df_name)
     if (any(df.dtypes == 'object') or any(df.dtypes == 'category')):
-        categorical_agg = count_categorical(df, group_var = group_var, df_name = df_name, agg_funcs = cat_agg_funcs, cols_alias = cols_alias).reset_index()
+        categorical_agg = count_categorical(df, group_var = group_var, df_name = df_name).reset_index()
         return numerical_agg.merge(categorical_agg, on = group_var, how = 'inner')
     else:
         return(numerical_agg)
