@@ -200,7 +200,7 @@ def get_datasets(debug_size, silent, treat_duplicated = True):
     return train_X, train_y, test_X, ids
 
 if __name__ == "__main__":
-    debug_size = 0
+    debug_size = 1000
     silent = False
     verbose = 50
     early_stopping_rounds = 200

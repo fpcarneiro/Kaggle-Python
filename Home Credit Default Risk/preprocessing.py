@@ -2,24 +2,48 @@ import numpy as np
 import pandas as pd
 import os
 
-from scipy.stats import skew, kurtosis
+#from scipy.stats import skew, kurtosis
 
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.preprocessing import LabelEncoder
+import time
+from contextlib import contextmanager
 
 DATADIR = "input/"
+SUBMISSIONS_DIR = "submissions/"
+
+@contextmanager
+def timer(title):
+    print("{} - Start!".format(title))
+    t0 = time.time()
+    yield
+    print("{} - Done in {:.0f}s".format(title, time.time() - t0))
+    print("")
+    
 
 def list_files(input_dir = "input/"):
     return (os.listdir(input_dir))
 
-def read_dataset_csv(input_dir = "input/", filename = ""):
-    return (pd.read_csv(input_dir + filename))
+def read_dataset_csv(input_dir = "input/", filename = "", nrows = None, usecols = None):
+    return (pd.read_csv(input_dir + filename, nrows = nrows, usecols = usecols))
 
-def read_train_test(input_dir = "input/", train_file = 'train.csv', test_file = 'test.csv'):
-    train = pd.read_csv(input_dir + train_file)
-    test = pd.read_csv(input_dir + test_file)
+def read_train_test(input_dir = "input/", train_file = 'train.csv', test_file = 'test.csv', nrows = None):
+    train = pd.read_csv(input_dir + train_file, nrows = nrows)
+    test = pd.read_csv(input_dir + test_file, nrows = nrows)
     return train, test
+
+def submit_file(test_id, test_pred, prefix_file_name = "submit", cv_score = None):
+    if cv_score != None:
+        file_name = "%s_%.6f.csv" % (prefix_file_name, cv_score)
+    else:
+        file_name = "%s.csv" % (prefix_file_name)
+    submit = pd.DataFrame()
+    submit['SK_ID_CURR'] = test_id
+    submit['TARGET'] = test_pred
+    submit[['SK_ID_CURR', 'TARGET']].to_csv(SUBMISSIONS_DIR + file_name, index= False)
+    return submit
 
 def get_memory_usage_mb(dataset):
     return (dataset.memory_usage().sum() / 1024 / 1024)
@@ -40,9 +64,9 @@ def check_flag_doc_cols(dataset):
     missing_table = mis_val_table.drop(mis_val_table[mis_val_table.iloc[:, 1] == 0].index).sort_values('% of Total', ascending=False).round(2)
     return(missing_table)
     
-def check_categorical_cols_values(dataset, col = "ORGANIZATION_TYPE"):
-    all_data_absolute = dataset.loc[:, col].value_counts().rename("Count")
-    all_data_percent = ((dataset.loc[:, col].value_counts() / len(dataset)) * 100).rename("% of Total")
+def check_categorical_cols_values(dataset, dropna = True, col = "ORGANIZATION_TYPE"):
+    all_data_absolute = dataset.loc[:, col].value_counts(dropna = dropna).rename("Count")
+    all_data_percent = ((dataset.loc[:, col].value_counts(dropna = dropna) / len(dataset)) * 100).rename("% of Total")
     mis_val_table = pd.concat([all_data_absolute, all_data_percent], axis=1)
     #mis_val_table.rename(columns = {0 : 'Count', 1 : '% of Total'}, inplace = True)
     missing_table = mis_val_table.drop(mis_val_table[mis_val_table.iloc[:, 1] == 0].index).sort_values('% of Total', ascending=False).round(2)
@@ -167,125 +191,53 @@ def correlation_matrix(dataset, target = 'TARGET', nvar = 10):
     return list(cols[1:])
 
 def get_domain_knowledge_features(X):
-    X_domain = X.copy()
+    X_ = X.copy()
     exc_cols = ['FONDKAPREMONT_MODE', 'HOUSETYPE_MODE','WALLSMATERIAL_MODE', 'EMERGENCYSTATE_MODE']
-    flag_doc_cols = [c for c in X_domain.columns if c.startswith("FLAG_DOCUMENT_")]
-    client_living_avg_cols = [c for c in X_domain.columns if c.endswith("_AVG")]
-    client_living_mode_cols = [c for c in X_domain.columns if c.endswith("_MODE") and c not in exc_cols]
-    client_living_median_cols = [c for c in X_domain.columns if c.endswith("_MEDI")]
+    flag_doc_cols = [c for c in X_.columns if c.startswith("FLAG_DOCUMENT_")]
+    client_living_avg_cols = [c for c in X_.columns if c.endswith("_AVG")]
+    client_living_mode_cols = [c for c in X_.columns if c.endswith("_MODE") and c not in exc_cols]
+    client_living_median_cols = [c for c in X_.columns if c.endswith("_MEDI")]
     
-    X_domain['CREDIT_INCOME_PERCENT'] = X_domain['AMT_CREDIT'] / X_domain['AMT_INCOME_TOTAL']
-    X_domain['CREDIT_GOODS_PRICE_PERCENT'] = X_domain['AMT_CREDIT'] / X_domain['AMT_GOODS_PRICE']
-    X_domain['ANNUITY_INCOME_PERCENT'] = X_domain['AMT_ANNUITY'] / X_domain['AMT_INCOME_TOTAL']
-    X_domain['CREDIT_TERM'] = X_domain['AMT_ANNUITY'] / X_domain['AMT_CREDIT']
-    X_domain['DAYS_EMPLOYED_PERCENT'] = X_domain['DAYS_EMPLOYED'] / X_domain['DAYS_BIRTH']
-    X_domain['INCOME_CREDIT_PERC'] = X_domain['AMT_INCOME_TOTAL'] / X_domain['AMT_CREDIT']
-    X_domain['INCOME_PER_PERSON'] = X_domain['AMT_INCOME_TOTAL'] / X_domain['CNT_FAM_MEMBERS']
-    X_domain['CHILDREN_RATIO'] = X_domain['CNT_CHILDREN'] / X_domain['CNT_FAM_MEMBERS']
-    X_domain["HOW_MANY_DOCUMENTS"] = X_domain.loc[:, flag_doc_cols].sum(axis=1)
-    X_domain["EXT_SOURCE_SUM"] = X_domain.loc[:, ['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']].sum(axis=1)
-    X_domain["EXT_SOURCE_AVG"] = X_domain.loc[:, ['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']].mean(axis=1)
+    X_['CREDIT_INCOME_PERCENT'] = X_['AMT_CREDIT'] / X_['AMT_INCOME_TOTAL']
+    X_['CREDIT_GOODS_PRICE_PERCENT'] = X_['AMT_CREDIT'] / X_['AMT_GOODS_PRICE']
+    X_['AMT_CREDIT_AMT_GOODS_PRICE_DIF'] = X_['AMT_CREDIT'] - X_['AMT_GOODS_PRICE']
+    X_['ANNUITY_INCOME_PERCENT'] = X_['AMT_ANNUITY'] / X_['AMT_INCOME_TOTAL']
+    X_['CREDIT_TERM'] = X_['AMT_ANNUITY'] / X_['AMT_CREDIT']
+    X_['DAYS_EMPLOYED_PERCENT'] = X_['DAYS_EMPLOYED'] / X_['DAYS_BIRTH']
+    X_['INCOME_CREDIT_PERC'] = X_['AMT_INCOME_TOTAL'] / X_['AMT_CREDIT']
+    X_['INCOME_PER_PERSON'] = X_['AMT_INCOME_TOTAL'] / X_['CNT_FAM_MEMBERS']
+    X_['INCOME_PER_CHILDREN'] = X_['AMT_INCOME_TOTAL'] / (1 + X_['CNT_CHILDREN'])
+    X_['CHILDREN_RATIO'] = X_['CNT_CHILDREN'] / X_['CNT_FAM_MEMBERS']
+    
+    X_['OWN_CAR_AGE_DAYS_BIRTH'] = X_['OWN_CAR_AGE'] / X_['DAYS_BIRTH']
+    X_['OWN_CAR_AGE_DAYS_EMPLOYED'] = X_['OWN_CAR_AGE'] / X_['DAYS_EMPLOYED']
+    X_['DAYS_LAST_PHONE_CHANGE_DAYS_BIRTH'] = X_['DAYS_LAST_PHONE_CHANGE'] / X_['DAYS_BIRTH']
+    X_['DAYS_LAST_PHONE_CHANGE_DAYS_EMPLOYED'] = X_['DAYS_LAST_PHONE_CHANGE'] / X_['DAYS_EMPLOYED']
+    X_['DAYS_EMPLOYED_DAYS_BIRTH'] = X_['DAYS_EMPLOYED'] - X_['DAYS_BIRTH']
+    
+    X_["HOW_MANY_DOCUMENTS"] = X_.loc[:, flag_doc_cols].sum(axis=1)
+    X_["EXT_SOURCE_SUM"] = X_.loc[:, ['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']].sum(axis=1)
+    X_["EXT_SOURCE_AVG"] = X_.loc[:, ['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']].mean(axis=1)
+    X_["EXT_SOURCE_STD"] = X_.loc[:, ['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']].std(axis=1)
+    
+    X_['EXT_SOURCE_PROD'] = X_['EXT_SOURCE_1'] * X_['EXT_SOURCE_2'] * X_['EXT_SOURCE_3']
+    X_['EXT_SOURCE_1_EXT_SOURCE_2'] = X_['EXT_SOURCE_1'] * X_['EXT_SOURCE_2']
+    X_['EXT_SOURCE_1_EXT_SOURCE_3'] = X_['EXT_SOURCE_1'] * X_['EXT_SOURCE_3']
+    X_['EXT_SOURCE_2_EXT_SOURCE_3'] = X_['EXT_SOURCE_2'] * X_['EXT_SOURCE_3']
+    X_['EXT_SOURCE_1_DAYS_EMPLOYED'] = X_['EXT_SOURCE_1'] * X_['DAYS_EMPLOYED']
+    X_['EXT_SOURCE_2_DAYS_EMPLOYED'] = X_['EXT_SOURCE_2'] * X_['DAYS_EMPLOYED']
+    X_['EXT_SOURCE_3_DAYS_EMPLOYED'] = X_['EXT_SOURCE_3'] * X_['DAYS_EMPLOYED']
+    X_['EXT_SOURCE_1_DAYS_BIRTH'] = X_['EXT_SOURCE_1'] / X_['DAYS_BIRTH']
+    X_['EXT_SOURCE_2_DAYS_BIRTH'] = X_['EXT_SOURCE_2'] / X_['DAYS_BIRTH']
+    X_['EXT_SOURCE_3_DAYS_BIRTH'] = X_['EXT_SOURCE_3'] / X_['DAYS_BIRTH']
     
     cols_flag_del = ['FLAG_DOCUMENT_16', 'FLAG_DOCUMENT_18', 'FLAG_DOCUMENT_11', 'FLAG_DOCUMENT_9', 'FLAG_DOCUMENT_13',
 'FLAG_DOCUMENT_14', 'FLAG_DOCUMENT_15', 'FLAG_DOCUMENT_19', 'FLAG_DOCUMENT_20', 'FLAG_DOCUMENT_21', 'FLAG_DOCUMENT_17',
 'FLAG_DOCUMENT_7', 'FLAG_DOCUMENT_4', 'FLAG_DOCUMENT_2', 'FLAG_DOCUMENT_10', 'FLAG_DOCUMENT_12']
     
-    return (X_domain.drop(cols_flag_del, axis = 1))
-
-def agg_numeric(df, group_var, df_name):
-    """Aggregates the numeric values in a dataframe. This can
-    be used to create features for each instance of the grouping variable.
+    X_.replace([np.inf, -np.inf, np.nan], 0, inplace = True)
     
-    Parameters
-    --------
-        df (dataframe): 
-            the dataframe to calculate the statistics on
-        group_var (string): 
-            the variable by which to group df
-        df_name (string): 
-            the variable used to rename the columns
-        
-    Return
-    --------
-        agg (dataframe): 
-            a dataframe with the statistics aggregated for 
-            all numeric columns. Each instance of the grouping variable will have 
-            the statistics (mean, min, max, sum; currently supported) calculated. 
-            The columns are also renamed to keep track of features created.
-    
-    """
-    # Remove id variables other than grouping variable
-    for col in df:
-        if col != group_var and 'SK_ID' in col:
-            df = df.drop([col], axis = 1)
-            
-    group_ids = df[group_var]
-    numeric_df = df.select_dtypes(include = ['number'])
-    numeric_df[group_var] = group_ids
-
-    # Group by the specified variable and calculate the statistics
-    agg = numeric_df.groupby(group_var).agg(['count', 'mean', 'max', 'min', 'sum', 'std', 'var']).reset_index()
-
-    # Need to create new column names
-    columns = [group_var]
-
-    # Iterate through the variables names
-    for var in agg.columns.levels[0]:
-        # Skip the grouping variable
-        if var != group_var:
-            # Iterate through the stat names
-            for stat in agg.columns.levels[1][:-1]:
-                # Make a new column name for the variable and stat
-                columns.append('%s_%s_%s' % (df_name, var, stat))
-
-    agg.columns = columns
-    return agg
-
-def count_categorical(df, group_var, df_name):
-    """Computes counts and normalized counts for each observation
-    of `group_var` of each unique category in every categorical variable
-    
-    Parameters
-    --------
-    df : dataframe 
-        The dataframe to calculate the value counts for.
-        
-    group_var : string
-        The variable by which to group the dataframe. For each unique
-        value of this variable, the final dataframe will have one row
-        
-    df_name : string
-        Variable added to the front of column names to keep track of columns
-    
-    Return
-    --------
-    categorical : dataframe
-        A dataframe with counts and normalized counts of each unique category in every categorical variable
-        with one row for every unique value of the `group_var`.
-        
-    """
-    
-    # Select the categorical columns
-    categorical = pd.get_dummies(df.select_dtypes(include = ['object', 'category']))
-
-    # Make sure to put the identifying id on the column
-    categorical[group_var] = df[group_var]
-
-    # Groupby the group var and calculate the sum and mean
-    categorical = categorical.groupby(group_var).agg(['sum', 'mean'])
-    
-    column_names = []
-    
-    # Iterate through the columns in level 0
-    for var in categorical.columns.levels[0]:
-        # Iterate through the stats in level 1
-        for stat in ['count', 'count_norm']:
-            # Make a new column name
-            column_names.append('%s_%s_%s' % (df_name, var, stat))
-    
-    categorical.columns = column_names
-    
-    return categorical
+    return (X_.drop(cols_flag_del, axis = 1))
 
 # Function to calculate correlations with the target for a dataframe
 def target_corrs(df):
@@ -335,13 +287,14 @@ def kde_target(var_name, df):
     print('Median value for loan that was not repaid = %0.4f' % avg_not_repaid)
     print('Median value for loan that was repaid =     %0.4f' % avg_repaid)
 
-def get_engineered_features(df, group_var, df_name):
-    numerical_agg = agg_numeric(df, group_var = group_var, df_name = df_name)
-    if (any(df.dtypes == 'object') or any(df.dtypes == 'category')):
-        categorical_agg = count_categorical(df, group_var = group_var, df_name = df_name).reset_index()
-        return numerical_agg.merge(categorical_agg, on = group_var, how = 'inner')
+def get_counts_features(df, group_var, df_name, count_var = None):
+    if count_var != None:
+        counts = df.groupby(group_var)[count_var].agg('count')
+        counts.name = df_name + '_ROWCOUNT'
     else:
-        return(numerical_agg)
+        counts = df.groupby(group_var)[group_var].agg('count')
+        counts.columns = [df_name + '_ROWCOUNT']
+    return (counts.reset_index())
 
 def get_engineered_features_from_file(filename, group_var, df_name, drop_cols = None):
     if drop_cols == None:
@@ -378,32 +331,32 @@ def aggregate_client(df, parent_df, group_vars, df_names):
     
     return df_by_client
 
-def aggregate_client_2(df, group_vars, df_names):
-    """Aggregate a dataframe with data at the loan level 
-    at the client level
-    
-    Args:
-        df (dataframe): data at the loan level
-        group_vars (list of two strings): grouping variables for the loan 
-        and then the client (example ['SK_ID_PREV', 'SK_ID_CURR'])
-        names (list of two strings): names to call the resulting columns
-        (example ['cash', 'client'])
-        
-    Returns:
-        df_client (dataframe): aggregated numeric stats at the client level. 
-        Each client will have a single row with all the numeric data aggregated
-    """
-    
-    df_agg = get_engineered_features(df, group_var = group_vars[0], df_name = df_names[0])
-
-    # Merge to include the SK_ID_CURR
-    #bureau_by_loan = bureau[['SK_ID_BUREAU', 'SK_ID_CURR']].merge(bureau_balance_agg, on = 'SK_ID_BUREAU', how = 'left')
-    df_by_loan = df_agg.merge(df[[group_vars[0], group_vars[1]]], on = group_vars[0], how = 'left')
-    df_by_loan = df_by_loan.drop([group_vars[0]], axis = 1)
-    # Aggregate the stats for each client
-    df_by_client = agg_numeric(df_by_loan, group_var = group_vars[1], df_name = df_names[1])
-    
-    return df_by_client
+#def aggregate_client_2(df, group_vars, df_names):
+#    """Aggregate a dataframe with data at the loan level 
+#    at the client level
+#    
+#    Args:
+#        df (dataframe): data at the loan level
+#        group_vars (list of two strings): grouping variables for the loan 
+#        and then the client (example ['SK_ID_PREV', 'SK_ID_CURR'])
+#        names (list of two strings): names to call the resulting columns
+#        (example ['cash', 'client'])
+#        
+#    Returns:
+#        df_client (dataframe): aggregated numeric stats at the client level. 
+#        Each client will have a single row with all the numeric data aggregated
+#    """
+#    
+#    df_agg = get_engineered_features(df, group_var = group_vars[0], df_name = df_names[0])
+#
+#    # Merge to include the SK_ID_CURR
+#    #bureau_by_loan = bureau[['SK_ID_BUREAU', 'SK_ID_CURR']].merge(bureau_balance_agg, on = 'SK_ID_BUREAU', how = 'left')
+#    df_by_loan = df_agg.merge(df[[group_vars[0], group_vars[1]]], on = group_vars[0], how = 'left')
+#    df_by_loan = df_by_loan.drop([group_vars[0]], axis = 1)
+#    # Aggregate the stats for each client
+#    df_by_client = agg_numeric(df_by_loan, group_var = group_vars[1], df_name = df_names[1])
+#    
+#    return df_by_client
 
 def equal_columns(col_a, col_b):
     return np.all(col_a == col_b)
@@ -485,15 +438,12 @@ def convert_types(df, print_info = False):
         
     return df
 
-def agg_categorical_numeric(df, df_name, group_var = ['SK_ID_CURR', 'CREDIT_ACTIVE'], funcs = ['sum', 'mean'], target_numvar = ['DAYS_CREDIT', 'AMT_ANNUITY']):
+
+
+def agg_categorical_numeric(df, df_name, group_var, funcs = ['sum', 'mean'], num_columns = None):   
     
-    df_1 = df.loc[:, group_var + target_numvar].groupby(group_var).agg(funcs)
-    
-    column_names = []
-    for var in df_1.columns.levels[0]:
-        for stat in list(df_1.columns.levels[1].get_values()):
-            column_names.append('%s_%s' % (var, stat.upper()))
-    df_1.columns = column_names
+    df_1 = agg_numeric(df, group_var, df_name = "", agg_funcs = funcs, num_columns = num_columns)
+    column_names = list(df_1.columns)
     
     df_2 = df_1.pivot_table(columns=[group_var[1]], values= column_names, index= [group_var[0]], fill_value=0)
     
@@ -508,3 +458,147 @@ def agg_categorical_numeric(df, df_name, group_var = ['SK_ID_CURR', 'CREDIT_ACTI
     df_2 = df_2.reset_index()
     
     return (df_2)
+
+
+def agg_numeric(df, group_var, df_name, agg_funcs = ['mean', 'median', 'sum'], num_columns = None):
+    """Aggregates the numeric values in a dataframe. This can
+    be used to create features for each instance of the grouping variable.
+    
+    Parameters
+    --------
+        df (dataframe): 
+            the dataframe to calculate the statistics on
+        group_var (string): 
+            the variable by which to group df
+        df_name (string): 
+            the variable used to rename the columns
+        
+    Return
+    --------
+        agg (dataframe): 
+            a dataframe with the statistics aggregated for 
+            all numeric columns. Each instance of the grouping variable will have 
+            the statistics (mean, min, max, sum; currently supported) calculated. 
+            The columns are also renamed to keep track of features created.
+    
+    """   
+    df_copy = df.copy()
+    
+    # Remove id variables other than grouping variable
+    id_vars = [col for col in df.columns if 'SK_ID' in col and col not in group_var]
+    if len(id_vars) > 0:
+        df_copy = df.drop(id_vars, axis = 1)
+        
+    if num_columns == None:
+        num_columns = list(set(df_copy.select_dtypes(include=['number']).columns) - set(group_var))
+            
+    numeric_df = df_copy.loc[:, group_var + num_columns]
+
+    # Group by the specified variable and calculate the statistics
+    agg = numeric_df.groupby(group_var).agg(agg_funcs).reset_index()
+
+    # Need to create new column names
+    columns = group_var[:]
+
+    # Iterate through the variables names
+    for var in agg.columns.levels[0]:
+        # Skip the grouping variable
+        if var not in group_var:
+            # Iterate through the stat names
+            for stat in agg.columns.levels[1][:-1]:
+                if stat:
+                # Make a new column name for the variable and stat
+                    columns.append('%s_%s_%s' % (df_name, var, stat.upper()))
+
+    agg.columns = columns
+    return agg
+
+def agg_categorical(df, group_var, df_name, agg_funcs = ['sum', 'mean'], cols_alias = ['COUNT', 'COUNT_NORM']):
+    """Computes counts and normalized counts for each observation
+    of `group_var` of each unique category in every categorical variable
+    
+    Parameters
+    --------
+    df : dataframe 
+        The dataframe to calculate the value counts for.
+        
+    group_var : string
+        The variable by which to group the dataframe. For each unique
+        value of this variable, the final dataframe will have one row
+        
+    df_name : string
+        Variable added to the front of column names to keep track of columns
+    
+    Return
+    --------
+    categorical : dataframe
+        A dataframe with counts and normalized counts of each unique category in every categorical variable
+        with one row for every unique value of the `group_var`.
+        
+    """
+    
+    # Select the categorical columns
+    cat_columns = list(df.select_dtypes(include=['object', 'category']).columns)
+    categorical = pd.get_dummies(df.loc[:, group_var + cat_columns])
+    
+    # Groupby the group var and calculate the sum and mean
+    categorical = categorical.groupby(group_var).agg(agg_funcs).reset_index()
+    
+    column_names = group_var[:]
+    
+    # Iterate through the columns in level 0
+    for var in categorical.columns.levels[0]:
+        # Skip the grouping variable
+        if var not in group_var:
+            # Iterate through the stats in level 1
+            for stat in cols_alias:
+                # Make a new column name
+                if stat:
+                    column_names.append('%s_%s_%s' % (df_name, var, stat))
+    
+    categorical.columns = column_names
+
+    return categorical
+
+def get_engineered_features(df, group_var, df_name, num_agg_funcs = ['mean', 'median', 'sum']):
+    num_agg = agg_numeric(df, group_var, df_name, agg_funcs = num_agg_funcs)
+    if (any(df.dtypes == 'object') or any(df.dtypes == 'category')):
+        cat_agg = agg_categorical(df, group_var, df_name)
+        return num_agg.merge(cat_agg, on = group_var, how = "inner")
+    else:
+        return num_agg
+    
+def join_low_occurance_categories(df, silent = True, join_category_name = "Other 2"):
+    df_copy = df.copy()
+    
+    _, cat_cols = get_feature_groups(df_copy)
+    
+    if not silent:
+        print("Decreading the number of categories...")
+    
+    for col in cat_cols:
+        cat_values_table = check_categorical_cols_values(df_copy, col = col)
+        s_low_values = set(cat_values_table[cat_values_table.loc[:, "% of Total"] < 1].index)
+        
+        if len(s_low_values) >= 2:
+            if not silent:
+                print("Decreasing the number of categories in {}...".format(col))
+                print("The following categories will be grouped: {}".format(s_low_values))
+            df_copy.loc[df_copy[col].isin(s_low_values), col] = join_category_name
+    return df_copy
+
+def label_encode(df, silent = True):
+    df_copy = df.copy()
+    
+    cat_cols = get_dtype_columns(df_copy, [np.dtype(object)])
+    cat_cols2encode = [c for c in cat_cols if len(df_copy[c].value_counts(dropna=False)) <= 2]
+    
+    if not silent:
+        print("Label encoding {}".format(cat_cols2encode))
+    
+    le = LabelEncoder()
+    for col in cat_cols2encode:
+        le.fit(df_copy[col])
+        df_copy[col] = le.transform(df[col])
+        
+    return df_copy
