@@ -438,7 +438,7 @@ def convert_types(df, print_info = False):
         
     return df
 
-def reduce_mem_usage(df):
+def reduce_mem_usage(df, convert_category = False):
     """ iterate through all the columns of a dataframe and modify the data type
         to reduce memory usage.        
     """
@@ -468,7 +468,8 @@ def reduce_mem_usage(df):
                 else:
                     df[col] = df[col].astype(np.float64)
         else:
-            df[col] = df[col].astype('category')
+            if convert_category:
+                df[col] = df[col].astype('category')
 
     end_mem = df.memory_usage().sum() / 1024**2
     print('Memory usage after optimization is: {:.2f} MB'.format(end_mem))
@@ -550,7 +551,7 @@ def agg_numeric(df, group_var, df_name, agg_funcs = ['mean', 'median', 'sum'], n
     agg.columns = columns
     return agg
 
-def agg_categorical(df, group_var, df_name, agg_funcs = ['sum', 'mean'], cols_alias = ['COUNT', 'COUNT_NORM']):
+def agg_categorical(df, group_var, df_name, agg_funcs = ['sum', 'mean'], cols_alias = ['COUNT', 'COUNT_NORM'], dummy_na = False, cat_columns = None):
     """Computes counts and normalized counts for each observation
     of `group_var` of each unique category in every categorical variable
     
@@ -575,8 +576,10 @@ def agg_categorical(df, group_var, df_name, agg_funcs = ['sum', 'mean'], cols_al
     """
     
     # Select the categorical columns
-    cat_columns = list(df.select_dtypes(include=['object', 'category']).columns)
-    categorical = pd.get_dummies(df.loc[:, group_var + cat_columns])
+    if cat_columns == None:
+        cat_columns = [col for col in list(df.select_dtypes(include=['object', 'category']).columns) if col not in group_var]
+    
+    categorical = pd.get_dummies(df.loc[:, group_var + cat_columns], columns=cat_columns, dummy_na = dummy_na)
     
     # Groupby the group var and calculate the sum and mean
     categorical = categorical.groupby(group_var).agg(agg_funcs).reset_index()
@@ -597,10 +600,10 @@ def agg_categorical(df, group_var, df_name, agg_funcs = ['sum', 'mean'], cols_al
 
     return categorical
 
-def get_engineered_features(df, group_var, df_name, num_agg_funcs = ['mean', 'median', 'sum']):
-    num_agg = agg_numeric(df, group_var, df_name, agg_funcs = num_agg_funcs)
-    if (any(df.dtypes == 'object') or any(df.dtypes == 'category')):
-        cat_agg = agg_categorical(df, group_var, df_name)
+def get_engineered_features(df, group_var, df_name, num_agg_funcs = ['mean', 'median', 'sum'], num_columns = None, dummy_na = False, cat_columns = None):
+    num_agg = agg_numeric(df, group_var, df_name, agg_funcs = num_agg_funcs, num_columns = num_columns)
+    if ((any(df.dtypes == 'object') or any(df.dtypes == 'category')) or cat_columns != None):
+        cat_agg = agg_categorical(df = df, group_var = group_var, df_name = df_name, dummy_na = dummy_na, cat_columns = cat_columns)
         return num_agg.merge(cat_agg, on = group_var, how = "inner")
     else:
         return num_agg

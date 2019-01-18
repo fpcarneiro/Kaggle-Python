@@ -50,12 +50,12 @@ def run_lgb(train_X, train_y, val_X, val_y, test_X, features = None, verbose = 5
             "metric" : "rmse",
             "num_leaves" : 30,
             "min_child_weight" : 50,
-            "learning_rate" : 0.05,
-            "bagging_fraction" : 0.7,
-            "feature_fraction" : 0.7,
+            "learning_rate" : 0.01,
+            "bagging_fraction" : 0.8,
+            "feature_fraction" : 0.8,
             "bagging_frequency" : 5,
             "bagging_seed" : 2018,
-            "num_iterations" : 1000
+            "num_iterations" : 2000
         }
        
     if features == None:
@@ -88,7 +88,7 @@ def get_datasets(debug_size, silent, treat_duplicated = True):
 if __name__ == "__main__":
     debug_size = 0
     silent = False
-    verbose = 100
+    verbose = 10
     early_stopping_rounds = 100
     
     with pp.timer("Full Model Run"):

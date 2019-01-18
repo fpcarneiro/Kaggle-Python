@@ -1,3 +1,4 @@
+import gc
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
@@ -22,12 +23,20 @@ def load_train_test(nrows = None, silent = True, treat_cat_missing = False, trea
     
     return train, test
 
-def historical_transactions():
-    historical_transactions = pp.read_dataset_csv(filename = "historical_transactions.csv")
+def historical_transactions(nrows = None):
     group_var = ['card_id']
-    counts = pp.get_counts_features(historical_transactions, group_var, "HF")
     
-    return counts
+    cat_columns = ['authorized_flag', 'category_3']
+    num_columns = ['installments', 'purchase_amount']
+    
+    historical_transactions = pp.read_dataset_csv(filename = "historical_transactions.csv", nrows = nrows)
+    historical_transactions = pp.reduce_mem_usage(historical_transactions)
+    
+    counts = pp.get_counts_features(historical_transactions, group_var, "HISTORY")
+    
+    fe = pp.get_engineered_features(historical_transactions, group_var = group_var, df_name = "HISTORY", num_columns = num_columns, dummy_na = True, cat_columns = cat_columns)
+    
+    return counts.merge(fe, on = group_var[0], how = 'left')
 
 def get_processed_files(debug_size, silent = True):
     num_rows = debug_size if debug_size != 0 else None
@@ -36,8 +45,15 @@ def get_processed_files(debug_size, silent = True):
                                       treat_num_missing = True, remove_duplicated_cols = True)
         subset_ids = list(train.card_id) + list(test.card_id) if debug_size != 0 else None
         if silent == False:
-            print("Train df shape:", train.shape)
-            print("Test df shape:", test.shape)
-
+            print("Train shape:", train.shape)
+            print("Test shape:", test.shape)
+    with timer("Process Historic Transactions"):
+        historical_transactions_agg = historical_transactions()
+        if silent == False:
+           print("Historic Transactions shape:", historical_transactions_agg.shape)
+        train = train.merge(historical_transactions_agg, on = 'card_id', how = 'left')
+        test = test.merge(historical_transactions_agg, on = 'card_id', how = 'left')
+        del historical_transactions_agg
+        gc.collect()
         
     return train, test
