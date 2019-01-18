@@ -22,11 +22,19 @@ def load_train_test(nrows = None, silent = True, treat_cat_missing = False, trea
     
     return train, test
 
+def historical_transactions():
+    historical_transactions = pp.read_dataset_csv(filename = "historical_transactions.csv")
+    group_var = ['card_id']
+    counts = pp.get_counts_features(historical_transactions, group_var, "HF")
+    
+    return counts
+
 def get_processed_files(debug_size, silent = True):
     num_rows = debug_size if debug_size != 0 else None
     with timer("Process train and test"):
         train, test = load_train_test(nrows = num_rows, silent = silent, treat_cat_missing = True, 
                                       treat_num_missing = True, remove_duplicated_cols = True)
+        subset_ids = list(train.card_id) + list(test.card_id) if debug_size != 0 else None
         if silent == False:
             print("Train df shape:", train.shape)
             print("Test df shape:", test.shape)
