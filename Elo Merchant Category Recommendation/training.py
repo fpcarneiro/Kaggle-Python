@@ -2,9 +2,9 @@ import gc
 import numpy as np
 import pandas as pd
 
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, mean_squared_error
 from sklearn.model_selection import KFold, StratifiedKFold
-from sklearn.base import BaseEstimator, ClassifierMixin, clone
+from sklearn.base import BaseEstimator, ClassifierMixin, clone, RegressorMixin
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from sklearn.utils.multiclass import unique_labels
 from sklearn.metrics import euclidean_distances
@@ -50,7 +50,7 @@ class GenericWrapper(BaseEstimator, ClassifierMixin):
         else:
             return dict(zip(self.feature_names_, [0] * len(self.feature_names_)))
 
-class LightGBMWrapper(BaseEstimator, ClassifierMixin):
+class LightGBMClassifierWrapper(BaseEstimator, ClassifierMixin):
     def __init__(self, params = {}, name = "lgb"):
         self.params = params
         self.name = name
@@ -83,6 +83,40 @@ class LightGBMWrapper(BaseEstimator, ClassifierMixin):
     
     def feature_importance(self, importance_type='gain', iteration=-1):
         check_is_fitted(self, ['booster_', 'classes_', 'feature_names_'])
+        return dict(zip(self.feature_names_, self.booster_.feature_importance()))
+    
+class LightGBMRegressorWrapper(BaseEstimator, RegressorMixin):
+    def __init__(self, params = {}, name = "lgb"):
+        self.params = params
+        self.name = name
+        
+    def get_params(self, deep=True):
+        return {"params": self.params, "name": self.name}
+    
+    def set_params(self, **parameters):
+        for parameter, value in parameters.items():
+            setattr(self, parameter, value)
+        return self
+    
+    def fit(self, X, y, **fit_params):
+        self.feature_names_ = X.columns.tolist()
+        
+        train_X = lgbm.Dataset(data = X, label = y, feature_name = self.feature_names_)
+        
+        if 'valid_sets' in fit_params:
+            datasets = [ lgbm.Dataset(data = val_x, label = val_y, feature_name = self.feature_names_) for (val_x, val_y) in fit_params['valid_sets'] ]
+            fit_params['valid_sets'] = datasets
+            self.fit_params_ = fit_params
+        
+        self.booster_ = lgbm.train(params=self.params, train_set=train_X, **self.fit_params_)
+        return self
+        
+    def predict(self, X):
+        check_is_fitted(self, ['booster_', 'feature_names_'])
+        return self.booster_.predict(X)
+    
+    def feature_importance(self, importance_type='gain', iteration=-1):
+        check_is_fitted(self, ['booster_', 'feature_names_'])
         return dict(zip(self.feature_names_, self.booster_.feature_importance()))
     
 class XgbWrapper(BaseEstimator, ClassifierMixin):
@@ -118,6 +152,40 @@ class XgbWrapper(BaseEstimator, ClassifierMixin):
     
     def feature_importance(self, fmap='', importance_type='gain'):
         check_is_fitted(self, ['booster_', 'classes_', 'feature_names_'])
+        return self.booster_.get_score()
+    
+class XgbRegressorWrapper(BaseEstimator, RegressorMixin):
+    def __init__(self, params = {}, name = "xgb"):
+        self.params = params
+        self.name = name
+        
+    def get_params(self, deep=True):
+        return {"params": self.params, "name": self.name}
+    
+    def set_params(self, **parameters):
+        for parameter, value in parameters.items():
+            setattr(self, parameter, value)
+        return self
+    
+    def fit(self, X, y, **fit_params):
+        self.feature_names_ = X.columns.tolist()
+        
+        train_X = xgb.DMatrix(data=X, label=y, feature_names = self.feature_names_)
+        
+        if 'evals' in fit_params:
+            datasets = [ (xgb.DMatrix(data = val_x, label = val_y, feature_names = self.feature_names_), name) for (val_x, val_y), name in fit_params['evals'] ]
+            fit_params['evals'] = datasets
+            self.fit_params_ = fit_params
+        
+        self.booster_ = xgb.train(params=self.params, dtrain=train_X, **fit_params)
+        return self
+
+    def predict(self, X):
+        check_is_fitted(self, ['booster_', 'feature_names_'])
+        return self.booster_.predict(xgb.DMatrix(data=X))
+    
+    def feature_importance(self, fmap='', importance_type='gain'):
+        check_is_fitted(self, ['booster_', 'feature_names_'])
         return self.booster_.get_score()
 
 
@@ -183,10 +251,12 @@ class OOFClassifier(BaseEstimator, ClassifierMixin):
             train_x, train_y = X.iloc[train_idx], y[train_idx]
             valid_x, valid_y = X.iloc[valid_idx], y[valid_idx]
             
-            if 'valid_sets' in fit_params:
-                fit_params['valid_sets'] = [(train_x, train_y), (valid_x, valid_y)]
-            if 'evals' in fit_params:
-                fit_params['evals'] = [((train_x, train_y), "train"), ((valid_x, valid_y), "validation")]
+            if 'valid_sets' in fit_params: # LightGBM
+                #fit_params['valid_sets'] = [(train_x, train_y), (valid_x, valid_y)]
+                fit_params['valid_sets'] = [(valid_x, valid_y)]
+            if 'evals' in fit_params: # XGBoost
+                #fit_params['evals'] = [((train_x, train_y), "train"), ((valid_x, valid_y), "validation")]
+                fit_params['evals'] = [((valid_x, valid_y), "validation")]
             if 'eval_set' in fit_params:
                 fit_params['eval_set'] = [(valid_x, valid_y)]
             
@@ -224,6 +294,89 @@ class OOFClassifier(BaseEstimator, ClassifierMixin):
         check_is_fitted(self, ['classes_', 'models_', 'importances_', 'oof_preds_', 'auc_score_'])
         
         self.predictions = np.column_stack([model.predict_proba(X) for model in self.models_])
+        
+        if self.weights == "same":
+            return np.mean(self.predictions, axis=1)
+        else:
+            for i in range(len(self.models_)):
+                self.predictions[:, i] *= self.weights[i]
+            return np.sum(self.predictions, axis=1)
+
+class OOFRegressor(BaseEstimator, RegressorMixin):
+    def __init__(self, reg, weights = "same", nfolds = 5, stratified = False):
+        self.reg = reg
+        self.weights = weights
+        self.nfolds = nfolds
+        self.stratified = stratified
+        
+    def get_params(self, deep=True):
+        return {"reg": self.reg, "weights": self.weights, "nfolds": self.nfolds, "stratified": self.stratified}
+    
+    def set_params(self, **parameters):
+        for parameter, value in parameters.items():
+            setattr(self, parameter, value)
+        return self
+    
+    def fit(self, X, y, **fit_params):
+        # Check that X and y have correct shape
+        #X, y = check_X_y(X, y)
+        # Store the classes seen during fit
+        #self.classes_, y = np.unique(y, return_inverse=True)
+        
+        self.models_ = [clone(self.reg) for f in range(self.nfolds)]
+        #self.models_ = [None for f in range(self.nfolds)]
+        self.importances_ = pd.DataFrame()
+        
+        folds = get_folds(self.nfolds, self.stratified)
+        self.oof_preds_ = np.zeros(X.shape[0])
+        
+        for n_fold, (train_idx, valid_idx) in enumerate(folds.split(X, y)):
+            train_x, train_y = X.iloc[train_idx], y[train_idx]
+            valid_x, valid_y = X.iloc[valid_idx], y[valid_idx]
+            
+            if 'valid_sets' in fit_params: # LightGBM
+                #fit_params['valid_sets'] = [(train_x, train_y), (valid_x, valid_y)]
+                fit_params['valid_sets'] = [(valid_x, valid_y)]
+            if 'evals' in fit_params: # XGBoost
+                #fit_params['evals'] = [((train_x, train_y), "train"), ((valid_x, valid_y), "validation")]
+                fit_params['evals'] = [((valid_x, valid_y), "validation")]
+            if 'eval_set' in fit_params:
+                fit_params['eval_set'] = [(valid_x, valid_y)]
+            
+            self.models_[n_fold].fit(train_x, train_y, **fit_params)
+            
+            self.oof_preds_[valid_idx] = self.models_[n_fold].predict(valid_x)
+            
+            if(hasattr(self.models_[n_fold], "feature_importances_")):
+                importances = self.models_[n_fold].feature_importances_
+            elif(hasattr(self.models_[n_fold], "feature_importance")):
+                importances = self.models_[n_fold].feature_importance()
+            elif(hasattr(self.models_[n_fold], "coef_")):
+                importances = self.models_[n_fold].coef_
+            elif(hasattr(self.models_[n_fold], "coefs_")):
+                importances = self.models_[n_fold].coefs_
+            else:
+                importances = None
+                
+            fold_importance_df = save_importances(importances, fold = n_fold + 1)
+            
+            self.importances_ = pd.concat([self.importances_, fold_importance_df], axis=0)
+            print('Fold %2d RMSE : %.6f' % (n_fold + 1, np.sqrt(mean_squared_error(valid_y, self.oof_preds_[valid_idx]))))
+            
+            del train_x, train_y, valid_x, valid_y
+            gc.collect()
+        
+        self.rmse_score_ = np.sqrt(mean_squared_error(y, self.oof_preds_))
+        print('Full RMSE score %.6f' % self.rmse_score_)
+        
+        return self
+    
+    def predict(self, X):
+        
+        # Check is fit had been called
+        check_is_fitted(self, ['models_', 'importances_', 'oof_preds_', 'rmse_score_'])
+        
+        self.predictions = np.column_stack([model.predict(X) for model in self.models_])
         
         if self.weights == "same":
             return np.mean(self.predictions, axis=1)

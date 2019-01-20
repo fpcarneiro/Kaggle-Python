@@ -40,9 +40,9 @@ def submit_file(test_id, test_pred, prefix_file_name = "submit", cv_score = None
     else:
         file_name = "%s.csv" % (prefix_file_name)
     submit = pd.DataFrame()
-    submit['SK_ID_CURR'] = test_id
-    submit['TARGET'] = test_pred
-    submit[['SK_ID_CURR', 'TARGET']].to_csv(SUBMISSIONS_DIR + file_name, index= False)
+    submit['card_id'] = test_id
+    submit['target'] = test_pred
+    submit[['card_id', 'target']].to_csv(SUBMISSIONS_DIR + file_name, index= False)
     return submit
 
 def get_memory_usage_mb(dataset):
@@ -445,31 +445,29 @@ def reduce_mem_usage(df, convert_category = False):
     start_mem = df.memory_usage().sum() / 1024**2
     print('Memory usage of dataframe is {:.2f} MB'.format(start_mem))
     
-    for col in df.columns:
-        col_type = df[col].dtype
-        
-        if col_type != object:
-            c_min = df[col].min()
-            c_max = df[col].max()
-            if str(col_type)[:3] == 'int':
-                if c_min > np.iinfo(np.int8).min and c_max < np.iinfo(np.int8).max:
-                    df[col] = df[col].astype(np.int8)
-                elif c_min > np.iinfo(np.int16).min and c_max < np.iinfo(np.int16).max:
-                    df[col] = df[col].astype(np.int16)
-                elif c_min > np.iinfo(np.int32).min and c_max < np.iinfo(np.int32).max:
-                    df[col] = df[col].astype(np.int32)
-                elif c_min > np.iinfo(np.int64).min and c_max < np.iinfo(np.int64).max:
-                    df[col] = df[col].astype(np.int64)  
-            else:
-                if c_min > np.finfo(np.float16).min and c_max < np.finfo(np.float16).max:
-                    df[col] = df[col].astype(np.float16)
-                elif c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
-                    df[col] = df[col].astype(np.float32)
-                else:
-                    df[col] = df[col].astype(np.float64)
+    for col in df.select_dtypes(include=[np.int]).columns:
+        c_min = df[col].min()
+        c_max = df[col].max()
+        if c_min > np.iinfo(np.int8).min and c_max < np.iinfo(np.int8).max:
+            df[col] = df[col].astype(np.int8)
+        elif c_min > np.iinfo(np.int16).min and c_max < np.iinfo(np.int16).max:
+            df[col] = df[col].astype(np.int16)
+        elif c_min > np.iinfo(np.int32).min and c_max < np.iinfo(np.int32).max:
+            df[col] = df[col].astype(np.int32)
+        elif c_min > np.iinfo(np.int64).min and c_max < np.iinfo(np.int64).max:
+            df[col] = df[col].astype(np.int64)  
+    
+    for col in df.select_dtypes(include=[np.float]).columns:
+        if c_min > np.finfo(np.float16).min and c_max < np.finfo(np.float16).max:
+            df[col] = df[col].astype(np.float16)
+        elif c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
+            df[col] = df[col].astype(np.float32)
         else:
-            if convert_category:
-                df[col] = df[col].astype('category')
+            df[col] = df[col].astype(np.float64)    
+        
+    for col in df.select_dtypes(include=[np.object]).columns: 
+        if convert_category:
+            df[col] = df[col].astype('category')
 
     end_mem = df.memory_usage().sum() / 1024**2
     print('Memory usage after optimization is: {:.2f} MB'.format(end_mem))
@@ -551,7 +549,7 @@ def agg_numeric(df, group_var, df_name, agg_funcs = ['mean', 'median', 'sum'], n
     agg.columns = columns
     return agg
 
-def agg_categorical(df, group_var, df_name, agg_funcs = ['sum', 'mean'], cols_alias = ['COUNT', 'COUNT_NORM'], dummy_na = False, cat_columns = None):
+def agg_categorical(df, group_var, df_name, agg_funcs = ['sum', 'mean'], cols_alias = ['COUNT', 'COUNT_NORM'], dummy_na = False, cat_columns = None, to_dummy = True):
     """Computes counts and normalized counts for each observation
     of `group_var` of each unique category in every categorical variable
     
@@ -579,7 +577,58 @@ def agg_categorical(df, group_var, df_name, agg_funcs = ['sum', 'mean'], cols_al
     if cat_columns == None:
         cat_columns = [col for col in list(df.select_dtypes(include=['object', 'category']).columns) if col not in group_var]
     
-    categorical = pd.get_dummies(df.loc[:, group_var + cat_columns], columns=cat_columns, dummy_na = dummy_na)
+    if to_dummy:
+        categorical = pd.get_dummies(df.loc[:, group_var + cat_columns], columns=cat_columns, dummy_na = dummy_na)
+    else:
+        categorical = df.loc[:, group_var + cat_columns]
+    # Groupby the group var and calculate the sum and mean
+    categorical = categorical.groupby(group_var).agg(agg_funcs).reset_index()
+    
+    column_names = group_var[:]
+    
+    # Iterate through the columns in level 0
+    for var in categorical.columns.levels[0]:
+        # Skip the grouping variable
+        if var not in group_var:
+            # Iterate through the stats in level 1
+            for stat in cols_alias:
+                # Make a new column name
+                if stat:
+                    column_names.append('%s_%s_%s' % (df_name, var, stat))
+    
+    categorical.columns = column_names
+
+    return categorical
+
+def agg_categorical2(df, group_var, df_name, agg_funcs = ['sum', 'mean'], cols_alias = ['COUNT', 'COUNT_NORM'], dummy_na = False, cat_columns = None):
+    """Computes counts and normalized counts for each observation
+    of `group_var` of each unique category in every categorical variable
+    
+    Parameters
+    --------
+    df : dataframe 
+        The dataframe to calculate the value counts for.
+        
+    group_var : string
+        The variable by which to group the dataframe. For each unique
+        value of this variable, the final dataframe will have one row
+        
+    df_name : string
+        Variable added to the front of column names to keep track of columns
+    
+    Return
+    --------
+    categorical : dataframe
+        A dataframe with counts and normalized counts of each unique category in every categorical variable
+        with one row for every unique value of the `group_var`.
+        
+    """
+    
+    # Select the categorical columns
+    if cat_columns == None:
+        cat_columns = [col for col in list(df.select_dtypes(include=['object', 'category']).columns) if col not in group_var]
+    
+    categorical = df.loc[:, group_var + cat_columns]
     
     # Groupby the group var and calculate the sum and mean
     categorical = categorical.groupby(group_var).agg(agg_funcs).reset_index()
