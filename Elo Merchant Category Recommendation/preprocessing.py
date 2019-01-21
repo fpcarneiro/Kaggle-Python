@@ -287,13 +287,19 @@ def kde_target(var_name, df):
     print('Median value for loan that was not repaid = %0.4f' % avg_not_repaid)
     print('Median value for loan that was repaid =     %0.4f' % avg_repaid)
 
-def get_counts_features(df, group_var, df_name, count_var = None):
+def get_counts_features(df, group_var, df_name = None, count_var = None, new_column_name = "ROWCOUNT"):    
+    
+    if df_name == None or df_name == "":
+        column_name = new_column_name
+    else:
+        column_name = df_name + '_' + new_column_name
+    
     if count_var != None:
         counts = df.groupby(group_var)[count_var].agg('count')
-        counts.name = df_name + '_ROWCOUNT'
+        counts.name = column_name
     else:
         counts = df.groupby(group_var)[group_var].agg('count')
-        counts.columns = [df_name + '_ROWCOUNT']
+        counts.columns = [column_name]
     return (counts.reset_index())
 
 def get_engineered_features_from_file(filename, group_var, df_name, drop_cols = None):
@@ -458,6 +464,8 @@ def reduce_mem_usage(df, convert_category = False):
             df[col] = df[col].astype(np.int64)  
     
     for col in df.select_dtypes(include=[np.float]).columns:
+        c_min = df[col].min()
+        c_max = df[col].max()
         if c_min > np.finfo(np.float16).min and c_max < np.finfo(np.float16).max:
             df[col] = df[col].astype(np.float16)
         elif c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
@@ -652,7 +660,8 @@ def get_engineered_features(df, group_var, df_name, num_agg_funcs = ['mean', 'me
     num_agg = agg_numeric(df, group_var, df_name, agg_funcs = num_agg_funcs, num_columns = num_columns)
     if ((any(df.dtypes == 'object') or any(df.dtypes == 'category')) or cat_columns != None):
         cat_agg = agg_categorical(df = df, group_var = group_var, df_name = df_name, dummy_na = dummy_na, cat_columns = cat_columns)
-        return num_agg.merge(cat_agg, on = group_var, how = "inner")
+        #return num_agg.merge(cat_agg, on = group_var, how = "inner")
+        return pd.concat([num_agg.set_index(group_var[0]), cat_agg.set_index(group_var[0])], axis = 1).reset_index()
     else:
         return num_agg
     
