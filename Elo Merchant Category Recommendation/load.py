@@ -31,6 +31,29 @@ def load_train_test(nrows = None, silent = True, treat_cat_missing = False, trea
     
     return train, test
 
+def historical_transactions_read(nrows = None):    
+    historical_transactions = pp.read_dataset_csv(filename = "historical_transactions.csv", nrows = nrows)
+    historical_transactions['purchase_date'] =  pd.to_datetime(historical_transactions['purchase_date'], format='%Y-%m-%d')
+    historical_transactions = pp.reduce_mem_usage(historical_transactions)
+    historical_transactions.sort_values(by=['card_id', 'purchase_date'], inplace = True)
+    return historical_transactions
+
+def interval_first(df, group_var = ['card_id'], date_column = "purchase_date", measure = [("D", "days")]):
+    last_purchase = pp.agg_numeric(df, group_var = group_var, df_name = "LAST", num_columns = [date_column], agg_funcs =["last"])
+    
+    last_purchase = df.merge(last_purchase, how="left", on=group_var[0])
+    
+    last_purchase.rename(index=str, columns={"LAST_" + date_column + "_LAST": "last_" + date_column}, inplace=True)
+    last_purchase["interval_since_first"] = last_purchase["last_" + date_column] - last_purchase[date_column]
+    
+    for m, prefix in measure:
+    #historical_transactions["interval_since_first"] = historical_transactions.groupby(['card_id']).purchase_date.apply(lambda x: x - x.iloc[0])
+        last_purchase[prefix + '_since_first'] = last_purchase["interval_since_first"] / np.timedelta64(1, m)
+    
+    last_purchase.drop(["last_" + date_column, 'interval_since_first', date_column], axis=1, inplace=True)
+    
+    return last_purchase
+
 def historical_transactions(nrows = None):
     group_var = ['card_id']
     
@@ -42,44 +65,44 @@ def historical_transactions(nrows = None):
     
     num_agg_funcs = [np.ptp, 'sum', 'mean', 'max', 'min', 'std']
     
-    historical_transactions = pp.read_dataset_csv(filename = "historical_transactions.csv", nrows = nrows)
+    # Read in Historical Transactions
+    historical_transactions = historical_transactions_read(nrows)
     
-    historical_transactions['purchase_date'] =  pd.to_datetime(historical_transactions['purchase_date'], format='%Y-%m-%d')
-    historical_transactions["purchase_month"] = historical_transactions["purchase_date"].dt.month
-    historical_transactions["purchase_year"] = historical_transactions["purchase_date"].dt.year
-    historical_transactions['month_diff'] = ((datetime.datetime.today() - historical_transactions['purchase_date']).dt.days)//30
-    historical_transactions['month_diff'] += historical_transactions['month_lag']
     
-    historical_transactions = pp.reduce_mem_usage(historical_transactions)
+    #historical_transactions["purchase_month"] = historical_transactions["purchase_date"].dt.month
+    #historical_transactions["purchase_year"] = historical_transactions["purchase_date"].dt.year
+    #historical_transactions['month_diff'] = ((datetime.datetime.today() - historical_transactions['purchase_date']).dt.days)//30
+    #historical_transactions['month_diff'] += historical_transactions['month_lag']
     
-    historical_transactions.sort_values(by=['card_id', 'purchase_date'], inplace = True)
+    with pp.timer("Calculating Interval since first"):
+        interval_since_first = interval_first(historical_transactions.loc[:, [group_var[0], "purchase_date"]])
     
-    historical_transactions["interval_since_first"] = historical_transactions.groupby(['card_id']).purchase_date.apply(lambda x: x - x.iloc[0])
-    historical_transactions['days_since_first'] = historical_transactions["interval_since_first"] / np.timedelta64(1,'D')
-    historical_transactions['hours_since_first'] = historical_transactions["interval_since_first"] / np.timedelta64(1,'h')
-    historical_transactions['weeks_since_first'] = historical_transactions["interval_since_first"] / np.timedelta64(1,'W')
-    
-    historical_transactions["interval_total_hours"] = historical_transactions.groupby(['card_id']).hours_since_first.agg(lambda x: x.iloc[-1])
-    historical_transactions["interval_total_days"] = historical_transactions.groupby(['card_id']).days_since_first.agg(lambda x: x.iloc[-1])
-    historical_transactions["interval_total_weeks"] = historical_transactions.groupby(['card_id']).weeks_since_first.agg(lambda x: x.iloc[-1])
-    
-    historical_transactions["interval_since_last"] = historical_transactions.groupby(['card_id']).purchase_date.diff()
-    historical_transactions['hours_since_last'] = historical_transactions["interval_since_last"] / np.timedelta64(1,'h')
-    historical_transactions['days_since_last'] = historical_transactions["interval_since_last"] / np.timedelta64(1,'D')
-    historical_transactions['weeks_since_last'] = historical_transactions["interval_since_last"] / np.timedelta64(1,'W')
-    
-    #min_max_purchase_date = historical_transactions.groupby(['card_id']).purchase_date.agg(['min', 'max'])
-    
-    interval = pp.agg_numeric(historical_transactions, group_var = group_var, df_name = "INTERVAL", num_columns = ["hours_since_first", "days_since_first", "weeks_since_first"], agg_funcs =["last"])
-    
-    counts = pp.get_counts_features(historical_transactions, group_var, "HISTORY")
-    
-    counts = counts.merge(interval, on = group_var[0], how = 'left')
-    
-    nunique = pp.agg_categorical(historical_transactions, group_var = group_var, df_name = "HISTORY", cat_columns = unique_columns, agg_funcs = ['nunique'], cols_alias = ['NUNIQUE'], to_dummy = False)
-    fe = pp.get_engineered_features(historical_transactions, group_var = group_var, df_name = "HISTORY", num_columns = num_columns, num_agg_funcs = num_agg_funcs, dummy_na = True, cat_columns = cat_columns)
-    
-    return (counts.merge(fe, on = group_var[0], how = 'left')).merge(nunique, on = group_var[0], how = 'left')
+#    historical_transactions["interval_total_hours"] = historical_transactions.groupby(['card_id']).hours_since_first.agg(lambda x: x.iloc[-1])
+#    historical_transactions["interval_total_days"] = historical_transactions.groupby(['card_id']).days_since_first.agg(lambda x: x.iloc[-1])
+#    historical_transactions["interval_total_weeks"] = historical_transactions.groupby(['card_id']).weeks_since_first.agg(lambda x: x.iloc[-1])
+#    
+#    with pp.timer("Calculating Interval since last"):
+#        historical_transactions["interval_since_last"] = historical_transactions.groupby(['card_id']).purchase_date.diff()
+#        historical_transactions['hours_since_last'] = historical_transactions["interval_since_last"] / np.timedelta64(1,'h')
+#        historical_transactions['days_since_last'] = historical_transactions["interval_since_last"] / np.timedelta64(1,'D')
+#        historical_transactions['weeks_since_last'] = historical_transactions["interval_since_last"] / np.timedelta64(1,'W')
+#    
+#    with pp.timer("Calculating Interval Total"):
+#        interval = pp.agg_numeric(historical_transactions, group_var = group_var, df_name = "INTERVAL", num_columns = ["hours_since_first", "days_since_first", "weeks_since_first"], agg_funcs =["last"])
+#    
+#    with pp.timer("Calculating Counts"):
+#        counts = pp.get_counts_features(historical_transactions, group_var, "HISTORY")
+#    
+#    counts = counts.merge(interval, on = group_var[0], how = 'left')
+#    
+#    with pp.timer("Calculating NUNIQUE"):
+#        nunique = pp.agg_categorical(historical_transactions, group_var = group_var, df_name = "HISTORY", cat_columns = unique_columns, agg_funcs = ['nunique'], cols_alias = ['NUNIQUE'], to_dummy = False)
+#    
+#    with pp.timer("Calculating Engineered Features"):
+#        fe = pp.get_engineered_features(historical_transactions, group_var = group_var, df_name = "HISTORY", num_columns = num_columns, num_agg_funcs = num_agg_funcs, dummy_na = True, cat_columns = cat_columns)
+#    
+#    return (counts.merge(fe, on = group_var[0], how = 'left')).merge(nunique, on = group_var[0], how = 'left')
+    return interval_since_first
 
 def get_processed_files(debug_size, silent = True):
     num_rows = debug_size if debug_size != 0 else None

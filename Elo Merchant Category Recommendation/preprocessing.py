@@ -517,18 +517,17 @@ def agg_numeric(df, group_var, df_name, agg_funcs = ['mean', 'median', 'sum'], n
             the statistics (mean, min, max, sum; currently supported) calculated. 
             The columns are also renamed to keep track of features created.
     
-    """   
-    df_copy = df.copy()
+    """
     
     # Remove id variables other than grouping variable
-    id_vars = [col for col in df.columns if 'SK_ID' in col and col not in group_var]
-    if len(id_vars) > 0:
-        df_copy = df.drop(id_vars, axis = 1)
+    #id_vars = [col for col in df.columns if 'SK_ID' in col and col not in group_var]
+    #if len(id_vars) > 0:
+    #    df_copy = df.drop(id_vars, axis = 1)
         
     if num_columns == None:
-        num_columns = list(set(df_copy.select_dtypes(include=['number']).columns) - set(group_var))
+        num_columns = list(set(df.select_dtypes(include=['number']).columns) - set(group_var))
             
-    numeric_df = df_copy.loc[:, group_var + num_columns]
+    numeric_df = df.loc[:, group_var + num_columns]
 
     # Group by the specified variable and calculate the statistics
     agg = numeric_df.groupby(group_var).agg(agg_funcs).reset_index()
