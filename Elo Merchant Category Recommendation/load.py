@@ -102,16 +102,23 @@ def historical_transactions(nrows = None, card_ids = None):
 #        interval = pp.agg_numeric(historical_transactions, group_var = group_var, df_name = "INTERVAL", num_columns = ["hours_since_first", "days_since_first", "weeks_since_first"], agg_funcs =["last"])
 #    
     with pp.timer("Calculating Counts"):
-        stat = pp.get_counts_features(historical_transactions.loc[:, [group_var[0]]], group_var = group_var, df_name = "HT", new_column_name = "transactions_count")   
+        stats = pp.get_counts_features(historical_transactions.loc[:, [group_var[0]]], group_var = group_var, df_name = "HT", new_column_name = "transactions_count")   
     with pp.timer("Calculating NUNIQUE"):
-        nunique = pp.agg_categorical(historical_transactions, group_var = group_var, df_name = "HT", cat_columns = unique_columns, agg_funcs = ['nunique'], cols_alias = ['NUNIQUE'], to_dummy = False)
-    with pp.timer("Calculating Engineered Features"):
-        fe = pp.get_engineered_features(historical_transactions, group_var = group_var, df_name = "HISTORY", num_columns = num_columns, num_agg_funcs = num_agg_funcs, dummy_na = True, cat_columns = cat_columns)
+        nunique = pp.agg_categorical(historical_transactions.loc[:, [group_var[0]] + unique_columns], group_var = group_var, df_name = "HT", cat_columns = unique_columns, agg_funcs = ['nunique'], cols_alias = ['NUNIQUE'], to_dummy = False)
+    with pp.timer("Calculating Engineered Features - Numerical"):
+        num_agg = pp.agg_numeric(historical_transactions.loc[:, [group_var[0]] + num_columns], group_var = group_var, df_name = "HT", agg_funcs = num_agg_funcs, num_columns = num_columns)
+    with pp.timer("Calculating Engineered Features - Categorical"): 
+        cat_agg = pp.agg_categorical(historical_transactions.loc[:, [group_var[0]] + cat_columns], group_var = group_var, df_name = "HT", dummy_na = False, cat_columns = cat_columns)
+        #fe = pp.get_engineered_features(historical_transactions, group_var = group_var, df_name = "HISTORY", num_columns = num_columns, num_agg_funcs = num_agg_funcs, dummy_na = True, cat_columns = cat_columns)
     
-    stat = pd.concat([ds.set_index(group_var[0]) for ds in [stat, nunique, fe]], axis = 1).reset_index()
+    stats = pd.concat([ds.set_index(group_var[0]) for ds in [stats, nunique, num_agg, cat_agg]], axis = 1).reset_index()
+    stats["HT_transactions_merchant"] = stats['HT_transactions_count']/stats["HT_merchant_id_NUNIQUE"]
+    stats["HT_transactions_merchant_cat"] = stats['HT_transactions_count']/stats["HT_merchant_category_id_NUNIQUE"]
     
-#    return (counts.merge(fe, on = group_var[0], how = 'left')).merge(nunique, on = group_var[0], how = 'left')
-    return historical_transactions, stat
+    del historical_transactions
+    gc.collect()
+
+    return stats
 
 def get_processed_files(debug_size, silent = True):
     num_rows = debug_size if debug_size != 0 else None
@@ -123,7 +130,7 @@ def get_processed_files(debug_size, silent = True):
             print("Train shape:", train.shape)
             print("Test shape:", test.shape)
     with timer("Process Historic Transactions"):
-        historical_transactions_agg = historical_transactions()
+        historical_transactions_agg = historical_transactions(card_ids=subset_ids)
         if silent == False:
            print("Historic Transactions shape:", historical_transactions_agg.shape)
         train = train.merge(historical_transactions_agg, on = 'card_id', how = 'left')
@@ -132,13 +139,3 @@ def get_processed_files(debug_size, silent = True):
         gc.collect()
         
     return train, test
-
-'''
-min_max = C_ID_4e6213e9bc.groupby(['card_id']).purchase_date.agg(['min', 'max'])
-C_ID_4e6213e9bc = C_ID_4e6213e9bc.merge(min_max, left_on="card_id", right_index=True, how="left")
-C_ID_4e6213e9bc["max"] - C_ID_4e6213e9bc["min"]
-
-C_ID_4e6213e9bc["intervalo_rolling"] = C_ID_4e6213e9bc.groupby(['card_id']).purchase_date.rolling(2).
-C_ID_4e6213e9bc['intervalo_total_dias_anterior'] = C_ID_4e6213e9bc["intervalo_total"] / np.timedelta64(1,'D')
-
-'''

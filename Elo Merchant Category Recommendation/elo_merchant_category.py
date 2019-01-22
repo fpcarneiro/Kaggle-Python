@@ -13,9 +13,25 @@ import lightgbm as lgb
 import training as tr
 import matplotlib.pyplot as plt
 import pandas as pd
+import numpy as np
+
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.wrappers.scikit_learn import KerasRegressor
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import KFold
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
 
 import warnings
 warnings.filterwarnings('ignore')
+
+def baseline_nn():
+	model = Sequential()
+	model.add(Dense(13, input_dim=75, init='normal', activation='relu'))
+	model.add(Dense(1, init='normal'))
+	model.compile(loss='mean_squared_error', optimizer='adam')
+	return model
 
 def get_tree_models():
     lgb_params = {}
@@ -125,7 +141,7 @@ def get_datasets(debug_size, silent, treat_duplicated = True):
     return train_X, train_y, test_X, ids
 
 if __name__ == "__main__":
-    debug_size = 0
+    debug_size = 10000
     silent = False
     verbose = 10
     early_stopping_rounds = 100
@@ -151,32 +167,22 @@ if __name__ == "__main__":
                 if debug_size == 0:
                     submission = pp.submit_file(ids, pred, prefix_file_name = m.name, cv_score = cv_score)
                 
+                tr.display_importances(feat_importance, 10)
+                
                 del model, pred, cv_score, feat_importance
                 gc.collect()
                 
                 print("*" * 80)
         
-#        pred_test = 0
-#        kf = model_selection.KFold(n_splits=10, random_state=2018, shuffle=True)
-#        for dev_index, val_index in kf.split(train_X):
-#            dev_X, val_X = train_X.loc[dev_index,:], train_X.loc[val_index,:]
-#            dev_y, val_y = train_y[dev_index], train_y[val_index]
-#    
-#            lgb_booster, predictions = run_lgb(dev_X, dev_y, val_X, val_y, test_X, features, verbose = verbose,  early_stopping_rounds = early_stopping_rounds)
-#            pred_test += predictions
-#            print("")
-#            
-#        pred_test /= 5.
-#        
-#        fig, ax = plt.subplots(figsize=(12,10))
-#        lgb.plot_importance(lgb_booster, max_num_features=50, height=0.8, ax=ax)
-#        ax.grid(False)
-#        plt.title("LightGBM - Feature Importance", fontsize=15)
-#        plt.show()
-#        
-#        sub_df = pd.DataFrame({"card_id": ids})
-#        sub_df["target"] = pred_test
-#        sub_df.to_csv("first_lgb.csv", index=False)
+        
+        estimators = []
+        estimators.append(('standardize', StandardScaler()))
+        estimators.append(('mlp', KerasRegressor(build_fn=baseline_nn, batch_size=32, verbose=0)))
+        pipeline = Pipeline(estimators)
+        kfold = KFold(n_splits=5)
+        results = np.sqrt(cross_val_score(pipeline, train_X.loc[:, features].values, train_y.values, cv=kfold))
+        print(results)
+        print("Standardized: %.2f (%.2f) MSE" % (results.mean(), results.std()))
         
         
         
