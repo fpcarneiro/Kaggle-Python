@@ -26,12 +26,13 @@ from sklearn.pipeline import Pipeline
 import warnings
 warnings.filterwarnings('ignore')
 
-def baseline_nn():
-	model = Sequential()
-	model.add(Dense(13, input_dim=75, init='normal', activation='relu'))
-	model.add(Dense(1, init='normal'))
-	model.compile(loss='mean_squared_error', optimizer='adam')
-	return model
+def baseline_nn(n_features=75):
+    model = Sequential()
+    model.add(Dense(64, input_dim=n_features, init='normal', activation='sigmoid'))
+    model.add(Dense(128, init='normal', activation='sigmoid'))
+    model.add(Dense(1, init='normal'))
+    model.compile(loss='mean_squared_error', optimizer='adam', metrics=['mae'])
+    return model
 
 def get_tree_models():
     lgb_params = {}
@@ -174,13 +175,32 @@ if __name__ == "__main__":
                 
                 print("*" * 80)
         
+        sk_params = {"n_features": train_X.shape[1], "batch_size": 32, "verbose" : 1}
+        
+        nn_model = baseline_nn(train_X.shape[1])
+        nn_model.summary()
+        
+        from keras.callbacks import EarlyStopping
+        from keras.callbacks import ModelCheckpoint  
+        
+        early_stop_loss = EarlyStopping(monitor='val_loss', patience=15, verbose=0)
+        early_stop_acc = EarlyStopping(monitor='val_acc', patience=15, verbose=0)
+        
+        epochs = 200
+        batch_size = 256
+
+        checkpointer = ModelCheckpoint(filepath='saved_models/weights.best.hdf5', 
+                               verbose=1, save_best_only=True)
+
+        hist = nn_model.fit(train_X.loc[:, features].values, train_y.values, validation_split=0.1, 
+                            batch_size=batch_size, callbacks=[checkpointer], verbose=1)
         
         estimators = []
         estimators.append(('standardize', StandardScaler()))
-        estimators.append(('mlp', KerasRegressor(build_fn=baseline_nn, batch_size=32, verbose=0)))
+        estimators.append(('mlp', KerasRegressor(build_fn=baseline_nn, **sk_params)))
         pipeline = Pipeline(estimators)
         kfold = KFold(n_splits=5)
-        results = np.sqrt(cross_val_score(pipeline, train_X.loc[:, features].values, train_y.values, cv=kfold))
+        results = np.sqrt(-cross_val_score(pipeline, train_X.loc[:, features].values, train_y.values, cv=kfold, scoring="mean_squared_error"))
         print(results)
         print("Standardized: %.2f (%.2f) MSE" % (results.mean(), results.std()))
         
