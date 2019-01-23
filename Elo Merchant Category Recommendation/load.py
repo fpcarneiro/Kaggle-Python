@@ -15,6 +15,9 @@ def elapsed_time(df):
 
 def load_train_test(nrows = None, silent = True, treat_cat_missing = False, treat_num_missing = False, remove_duplicated_cols = False):
     train, test = pp.read_train_test(nrows = nrows)
+    
+    test["first_active_month"].fillna(test["first_active_month"].mode().iloc[0], inplace=True)
+    
     train['first_active_month'] =  pd.to_datetime(train['first_active_month'], format='%Y-%m-%d')
     test['first_active_month'] =  pd.to_datetime(test['first_active_month'], format='%Y-%m-%d')
     
@@ -129,13 +132,13 @@ def get_processed_files(debug_size, silent = True):
         if silent == False:
             print("Train shape:", train.shape)
             print("Test shape:", test.shape)
-    with timer("Process Historic Transactions"):
-        historical_transactions_agg = historical_transactions(card_ids=subset_ids)
-        if silent == False:
-           print("Historic Transactions shape:", historical_transactions_agg.shape)
-        train = train.merge(historical_transactions_agg, on = 'card_id', how = 'left')
-        test = test.merge(historical_transactions_agg, on = 'card_id', how = 'left')
-        del historical_transactions_agg
-        gc.collect()
+#    with timer("Process Historic Transactions"):
+#        historical_transactions_agg = historical_transactions(card_ids=subset_ids)
+#        if silent == False:
+#           print("Historic Transactions shape:", historical_transactions_agg.shape)
+#        train = train.merge(historical_transactions_agg, on = 'card_id', how = 'left')
+#        test = test.merge(historical_transactions_agg, on = 'card_id', how = 'left')
+#        del historical_transactions_agg
+#        gc.collect()
         
     return train, test

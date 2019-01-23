@@ -190,10 +190,10 @@ class XgbRegressorWrapper(BaseEstimator, RegressorMixin):
 
 
 def display_importances(feature_importance_df_, how_many = 40):
-    cols = feature_importance_df_[["feature", "importance"]].groupby("feature").mean().sort_values(by="importance", ascending=False)[:how_many].index
-    best_features = feature_importance_df_.loc[feature_importance_df_.feature.isin(cols)]
+    cols = feature_importance_df_[["FEATURE", "IMPORTANCE"]].groupby("FEATURE").mean().sort_values(by="IMPORTANCE", ascending=False)[:how_many].index
+    best_features = feature_importance_df_.loc[feature_importance_df_.FEATURE.isin(cols)]
     plt.figure(figsize=(8, 10))
-    sns.barplot(x="importance", y="feature", data=best_features.sort_values(by="importance", ascending=False))
+    sns.barplot(x="IMPORTANCE", y="FEATURE", data=best_features.sort_values(by="IMPORTANCE", ascending=False))
     plt.title('LightGBM Features (avg over folds)')
     plt.tight_layout()
     plt.savefig('lgbm_importances01.png')
@@ -303,14 +303,14 @@ class OOFClassifier(BaseEstimator, ClassifierMixin):
             return np.sum(self.predictions, axis=1)
 
 class OOFRegressor(BaseEstimator, RegressorMixin):
-    def __init__(self, reg, weights = "same", nfolds = 5, stratified = False):
-        self.reg = reg
+    def __init__(self, regressor, weights = "same", nfolds = 5, stratified = False):
+        self.regressor = regressor
         self.weights = weights
         self.nfolds = nfolds
         self.stratified = stratified
         
     def get_params(self, deep=True):
-        return {"reg": self.reg, "weights": self.weights, "nfolds": self.nfolds, "stratified": self.stratified}
+        return {"regressor": self.regressor, "weights": self.weights, "nfolds": self.nfolds, "stratified": self.stratified}
     
     def set_params(self, **parameters):
         for parameter, value in parameters.items():
@@ -318,13 +318,7 @@ class OOFRegressor(BaseEstimator, RegressorMixin):
         return self
     
     def fit(self, X, y, **fit_params):
-        # Check that X and y have correct shape
-        #X, y = check_X_y(X, y)
-        # Store the classes seen during fit
-        #self.classes_, y = np.unique(y, return_inverse=True)
-        
-        self.models_ = [clone(self.reg) for f in range(self.nfolds)]
-        #self.models_ = [None for f in range(self.nfolds)]
+        self.models_ = [clone(self.regressor) for f in range(self.nfolds)]
         self.importances_ = pd.DataFrame()
         
         folds = get_folds(self.nfolds, self.stratified)
