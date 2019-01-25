@@ -34,6 +34,16 @@ def load_train_test(nrows = None, silent = True, treat_cat_missing = False, trea
     train['weekofyear'] = train['first_active_month'].dt.weekofyear
     test['weekofyear'] = test['first_active_month'].dt.weekofyear
     
+    train['outliers'] = 0
+    train.loc[train['target'] < -30, 'outliers'] = 1
+    
+    for f in ['feature_1','feature_2','feature_3']:
+        order_label = train.groupby([f])['outliers'].mean()
+        train[f + "_"] = train[f].map(order_label)
+        test[f + "_"] = test[f].map(order_label)
+        
+    train.drop(['outliers'], axis = 1, inplace=True)
+    
     train = pp.hot_encode(train, ["feature_1", "feature_2", "feature_3"])
     test = pp.hot_encode(test, ["feature_1", "feature_2", "feature_3"])
     
@@ -51,7 +61,7 @@ def transactions_read(file = "historical_transactions.csv", nrows = None, card_i
     
     return transactions
 
-def get_interval_first_total(df, group_var = ['card_id'], date_column = "purchase_date", measure = [("D", "days")]):
+def get_interval_first_total(df, group_var = ['card_id'], date_column = "purchase_date", measure = [("M", "months"), ("D", "days")]):
     first_last_purchase = pp.agg_numeric(df, group_var = group_var, df_name = "FIRST_LAST", num_columns = [date_column], agg_funcs =["first", "last"])
     
     first_last_purchase = df.merge(first_last_purchase, how="left", on=group_var[0])
@@ -71,7 +81,7 @@ def get_interval_first_total(df, group_var = ['card_id'], date_column = "purchas
     
     return first_last_purchase
 
-def interval_previuos(df, group_var = ['card_id'], date_column = "purchase_date", measure = [("h", "hours")]):
+def interval_previuos(df, group_var = ['card_id'], date_column = "purchase_date", measure = [("M", "months"), ("W", "weeks"), ("D", "days"), ("h", "hours")]):
     df["previous_purchase"] = df.groupby(["card_id"])[date_column].shift(1)
     df["interval_since_previous"] = df[date_column] - df["previous_purchase"]
     
@@ -94,7 +104,9 @@ def get_transactions_stats(df, df_name = "HT"):
     cat_columns = ['authorized_flag', 'category_3', 'category_1', 'category_2']
     
     num_columns = ['installments', 'purchase_amount','month_lag', 
-                   'days_since_first', 'hours_since_previous', "month_diff"]
+                   'days_since_first', 'months_since_first',
+                   'hours_since_previous', 'days_since_previous', 'weeks_since_previous', 'months_since_previous', 
+                   "month_diff"]
     
     unique_columns = ['merchant_id', 'merchant_category_id', 'state_id', 'city_id', 'subsector_id', 
                       'purchase_month', 'purchase_hour', 'purchase_weekofyear', 'purchase_dayofweek', 'purchase_year', 'purchase_weekend']
@@ -179,8 +191,11 @@ def get_processed_files(debug_size, silent = True):
         train["HT_first_purchase_delay"] = (train["HT_first_purchase_date_FIRST"] - train["first_active_month"]) / np.timedelta64(1, "D")
         test["HT_first_purchase_delay"] = (test["HT_first_purchase_date_FIRST"] - test["first_active_month"]) / np.timedelta64(1, "D")
         
-        train['HT_days_no_purchase'] = (datetime.datetime.today() - train['HT_last_purchase_date_FIRST']).dt.days
-        test['HT_days_no_purchase'] = (datetime.datetime.today() - test['HT_last_purchase_date_FIRST']).dt.days
+        train['HT_days_no_purchase'] = (datetime.datetime.today() - train['HT_last_purchase_date_FIRST']) / np.timedelta64(1, "D")
+        test['HT_days_no_purchase'] = (datetime.datetime.today() - test['HT_last_purchase_date_FIRST']) / np.timedelta64(1, "D")
+        
+        train['HT_weeks_no_purchase'] = (datetime.datetime.today() - train['HT_last_purchase_date_FIRST']) / np.timedelta64(1, "W")
+        test['HT_weeks_no_purchase'] = (datetime.datetime.today() - test['HT_last_purchase_date_FIRST']) / np.timedelta64(1, "W")
         
         train.drop(["HT_first_purchase_date_FIRST", "HT_last_purchase_date_FIRST"], axis = 1, inplace=True)
         test.drop(["HT_first_purchase_date_FIRST", "HT_last_purchase_date_FIRST"], axis = 1, inplace=True)
@@ -198,8 +213,11 @@ def get_processed_files(debug_size, silent = True):
         train["NT_first_purchase_delay"] = (train["NT_first_purchase_date_FIRST"] - train["first_active_month"]) / np.timedelta64(1, "D")
         test["NT_first_purchase_delay"] = (test["NT_first_purchase_date_FIRST"] - test["first_active_month"]) / np.timedelta64(1, "D")
         
-        train['NT_days_no_purchase'] = (datetime.datetime.today() - train['NT_last_purchase_date_FIRST']).dt.days
-        test['NT_days_no_purchase'] = (datetime.datetime.today() - test['NT_last_purchase_date_FIRST']).dt.days
+        train['NT_days_no_purchase'] = (datetime.datetime.today() - train['NT_last_purchase_date_FIRST']) / np.timedelta64(1, "D")
+        test['NT_days_no_purchase'] = (datetime.datetime.today() - test['NT_last_purchase_date_FIRST']) / np.timedelta64(1, "D")
+        
+        train['NT_weeks_no_purchase'] = (datetime.datetime.today() - train['NT_last_purchase_date_FIRST']) / np.timedelta64(1, "W")
+        test['NT_weeks_no_purchase'] = (datetime.datetime.today() - test['NT_last_purchase_date_FIRST']) / np.timedelta64(1, "W")
         
         train.drop(["NT_first_purchase_date_FIRST", "NT_last_purchase_date_FIRST"], axis = 1, inplace=True)
         test.drop(["NT_first_purchase_date_FIRST", "NT_last_purchase_date_FIRST"], axis = 1, inplace=True)
